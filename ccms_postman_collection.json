@@ -1,0 +1,705 @@
+{
+  "info": {
+    "_postman_id": "dac8f2a8-9cb0-4f9b-bb80-80e99c5cb8dd",
+    "name": "Orient Paper CCMS API",
+    "description": "Comprehensive Postman collection for the Orient Paper Customer Complaint Management System (CCMS) 11-stage dynamic pipeline.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Authentication",
+      "item": [
+        {
+          "name": "User Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data && jsonData.data.token) {",
+                  "    pm.environment.set(\"token\", jsonData.data.token);",
+                  "    console.log(\"Saved token variable: \" + jsonData.data.token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"paper.procurement@itc.in\",\n  \"password\": \"customerpassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Logs in a user. Available Roles/Credentials for testing:\n- **Customer**: `paper.procurement@itc.in` / `customerpassword123`\n- **TS Head**: `amit.sharma@orientpaper.com` / `password123`\n- **TS Engineer**: `neha.verma@orientpaper.com` / `password123`\n- **QC Head**: `rajesh.gupta@orientpaper.com` / `password123`\n- **QC Engineer**: `pooja.singh@orientpaper.com` / `password123`\n- **Ops Engineer**: `karan.patel@orientpaper.com` / `password123`\n- **Ops Head**: `vikram.mehta@orientpaper.com` / `password123`\n- **Marketing PM**: `rohit.malhotra@orientpaper.com` / `password123`\n- **Marketing Head**: `anjali.kapoor@orientpaper.com` / `password123`\n- **Managing Director**: `sanjay.bansal@orientpaper.com` / `password123`\n- **Finance Executive**: `deepak.sinha@orientpaper.com` / `password123`\n- **Administrator**: `admin@orientpaper.com` / `password123`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Metadata & Lookups",
+      "item": [
+        {
+          "name": "Get Lookups",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/complaints/lookups",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "lookups"
+              ]
+            },
+            "description": "Retrieves complaint categories, defect natures, priorities, and severities for intake."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Customer Invoices",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/complaints/invoices",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "invoices"
+              ]
+            },
+            "description": "Retrieves list of active invoices mapped to the logged-in customer."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Invoice Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/complaints/invoices/INV100009",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "invoices",
+                "INV100009"
+              ]
+            },
+            "description": "Retrieves line items and pricing for a specific invoice number."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Employees List (Admin only)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/complaints/employees",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "employees"
+              ]
+            },
+            "description": "Lists all active employees and their role classifications."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Core Complaints",
+      "item": [
+        {
+          "name": "Log Complaint (Intake)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Moisture line defects on coping paper reams\",\n  \"description\": \"Moisture tests exceed maximum allowable limit (standard 7.5%, tested 9.5%).\",\n  \"priorityId\": 32,\n  \"lineItems\": [\n    {\n      \"invoiceNo\": \"INV100009\",\n      \"lineItem\": 1,\n      \"defectiveQty\": 3.5,\n      \"categoryId\": 38,\n      \"defectNatureId\": 43,\n      \"customerRemarks\": \"Moisture content OPM limits breach.\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/complaints",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints"
+              ]
+            },
+            "description": "Submits a new customer complaint. Automatically routes to KAM Verification Pending."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Complaints List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/complaints",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints"
+              ]
+            },
+            "description": "Loads complaints list filtered by the logged-in user's role-based visibility rules."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Complaint Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/complaints/88",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "88"
+              ]
+            },
+            "description": "Retrieves comprehensive details for a specific complaint (header, line items, logs, visit details, QC reviews, CAPA, credit notes)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Dashboard Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/complaints/dashboard/stats",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "dashboard",
+                "stats"
+              ]
+            },
+            "description": "Retrieves dashboard statistics based on logged-in user's division and role permissions."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Technical Services (TS) Stage",
+      "item": [
+        {
+          "name": "Schedule Customer Visit (TS Head)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"actionType\": \"visit-schedule\",\n  \"visitDate\": \"2026-07-22 14:00:00\",\n  \"departureDate\": \"2026-07-22 09:00:00\",\n  \"returnDate\": \"2026-07-23 18:00:00\",\n  \"visitMembers\": [100003],\n  \"remarks\": \"Onsite inspection of batch Dryer 3 rolls.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/complaints/88/ts-review",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "88",
+                "ts-review"
+              ]
+            },
+            "description": "Schedules a customer site visit. Restricted to TS Head or Administrator. Transitions status to 'Visit Scheduled' and assigns to KAM for coordination."
+          },
+          "response": []
+        },
+        {
+          "name": "Submit Field Remarks (Visit Member)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"remarks\": \"Inspected rolls on-site. Moisture lines and damp reams confirmed. Recommend forwarding to QC for lab verification.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/complaints/88/visit-remarks",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "88",
+                "visit-remarks"
+              ]
+            },
+            "description": "Submits field observations. Must be called by the assigned visit member employee. Once all members submit remarks, complaint automatically returns to Under TS Review (status 18) assigned to TS Head."
+          },
+          "response": []
+        },
+        {
+          "name": "Forward TS Review to QC (TS Head)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"actionType\": \"forward\",\n  \"remarks\": \"Onsite check completed. Sample forwarded to QC Lab for chemical analysis.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/complaints/88/ts-review",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "88",
+                "ts-review"
+              ]
+            },
+            "description": "Completes TS review and forwards complaint to Quality Control (moves to status 21 'QC Review Pending')."
+          },
+          "response": []
+        },
+        {
+          "name": "Get TS Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/complaints/88/ts-review",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "88",
+                "ts-review"
+              ]
+            },
+            "description": "Loads TS investigation details, visits, and assigned visit members."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Quality Control (QC) Stage",
+      "item": [
+        {
+          "name": "Request Physical Sample",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"actionType\": \"sample-request\",\n  \"remarks\": \"Requesting 2 reams from batch Dryer 3 for GSM check.\",\n  \"sampleRequestDate\": \"2026-07-17 12:00:00\",\n  \"sampleContactEmployeeId\": 100003,\n  \"courierDetails\": \"Orient Paper Dispatch Desk\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/complaints/88/qc-review",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "88",
+                "qc-review"
+              ]
+            },
+            "description": "Requests customer sample. Transitions complaint to 'Waiting Sample' (status 20) and pauses SLA timer."
+          },
+          "response": []
+        },
+        {
+          "name": "Log Sample Receipt",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"actionType\": \"sample-receive\",\n  \"sampleCondition\": \"Intact package, slightly damp edges\",\n  \"remarks\": \"Sample received at QC desk.\",\n  \"sampleDispatchedDate\": \"2026-07-18 10:00:00\",\n  \"sampleReceivedDate\": \"2026-07-20 11:30:00\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/complaints/88/qc-review",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "88",
+                "qc-review"
+              ]
+            },
+            "description": "Records receipt of requested sample, resets SLA window to exactly 3 days, and unpauses SLA timer."
+          },
+          "response": []
+        },
+        {
+          "name": "Forward QC Review to QC Head",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"actionType\": \"forward\",\n  \"sampleVerified\": true,\n  \"observation\": \"Moisture level verified at 9.6%. Breaches Orient Paper threshold (7.5%).\",\n  \"recommendation\": \"Approve customer replacement or commercial credit note.\",\n  \"remarks\": \"Technical defect is genuine. Forwarding to QC Head for final confirmation.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/complaints/88/qc-review",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "88",
+                "qc-review"
+              ]
+            },
+            "description": "Forwards analysis details to the QC Head. Moves complaint status to 'QC Head Pending' (status 84)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get QC Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/complaints/88/qc-review",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "88",
+                "qc-review"
+              ]
+            },
+            "description": "Retrieves QC inspection, sample tracking logs, and image responses."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "6. CAPA & Operations",
+      "item": [
+        {
+          "name": "Submit CAPA Worksheet (Operations Engineer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rootCause\": \"Calibration issue in Dryer section 3 control valve.\",\n  \"correctiveAction\": \"Recalibrated sensor controls and locked valve mechanism.\",\n  \"preventiveAction\": \"Added valve lock checklist to weekly preventative maintenance logs.\",\n  \"remarks\": \"CAPA details finalized.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/complaints/88/capa",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "88",
+                "capa"
+              ]
+            },
+            "description": "Logs Corrective and Preventive Actions. Moves complaint status to 'Ops Head Approval' (status 23)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get CAPA Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/complaints/88/capa",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "88",
+                "capa"
+              ]
+            },
+            "description": "Loads the CAPA worksheet details for review."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "7. Approvals Stage",
+      "item": [
+        {
+          "name": "Approve / Forward Stage",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stage\": \"kam\",\n  \"remarks\": \"KAM verification check approved. Forwarding to TS.\",\n  \"severityId\": 32\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/complaints/88/approve",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "88",
+                "approve"
+              ]
+            },
+            "description": "Progresses a complaint past an approval node. `stage` parameters supported:\n- **`kam`**: KAM approves intake and forwards to TS Review (severityId optional update)\n- **`qc-head`**: QC Head approves QC review details, forwards to CAPA Pending\n- **`ops-head`**: Ops Head approves CAPA worksheet, forwards to Marketing Review\n- **`marketing-pm`**: PM reviews commercial proposal, forwards to Marketing Head\n- **`marketing-head`**: Marketing Head approves commercial settlement (requires `settlementAmount`). Moves to Finance Pending (<= 1 Lakh) or MD Approval (> 1 Lakh)\n- **`md`**: Managing Director approves settlement. Moves to Finance Pending\n- **`finance-head`**: Finance Head approves issued Credit Note. Closes the complaint."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "8. Finance Execution",
+      "item": [
+        {
+          "name": "Issue Credit Note (Finance Executive)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"creditNoteNumber\": \"SAP-CN-2026-9912\",\n  \"creditNoteDate\": \"2026-07-25\",\n  \"creditNoteAmount\": 65000,\n  \"fiscalYear\": \"2026\",\n  \"companyCode\": \"OPM_PAPER\",\n  \"remarks\": \"SAP credit note sync complete.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/complaints/88/finance",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "88",
+                "finance"
+              ]
+            },
+            "description": "Prepares and posts credit note details from SAP. Moves complaint to 'Credit Note Pending' (status 83) assigned to Finance Head."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "9. Reopening & Actions",
+      "item": [
+        {
+          "name": "Reopen Closed Complaint (KAM only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"reopen\",\n  \"remarks\": \"Customer claims moisture issue is still visible in replacement batches. Reopening for onsite audit.\",\n  \"targetStageId\": 2\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/complaints/88/action",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "88",
+                "action"
+              ]
+            },
+            "description": "Reopens a closed complaint within the permitted 7-day window. Only authorized for the mapped KAM or Admin. Customer accounts are blocked. Re-routes to the targeted stage (usually TS Review)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "10. Admin Reassignment",
+      "item": [
+        {
+          "name": "Get Department Workload Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/complaints/admin/dept-stats",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "admin",
+                "dept-stats"
+              ]
+            },
+            "description": "Retrieves the active workloads and assignee distribution across departments."
+          },
+          "response": []
+        },
+        {
+          "name": "Reassign Complaint (Admin only)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assigneeId\": 100003,\n  \"remarks\": \"Reassigning to Neha Verma due to current workload balancing.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/complaints/88/assign",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "complaints",
+                "88",
+                "assign"
+              ]
+            },
+            "description": "Manually reassigns the active owner of a complaint to another eligible employee."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000/api",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

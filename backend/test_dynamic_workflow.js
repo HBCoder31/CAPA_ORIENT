@@ -81,25 +81,26 @@ async function runWorkflowTest() {
     // 3. TS Review (Stage 2 to 3) - Neha Verma schedules, completes, and forwards
     console.log('\n--- Stage 3: Technical Services Review (Neha Verma) ---');
     const tsToken = await getToken('neha.verma@orientpaper.com');
+    const tsHeadToken = await getToken('amit.sharma@orientpaper.com');
     await axios.post(`${BASE_URL}/complaints/${complaintId}/ts-review`, {
       actionType: 'visit-schedule',
       visitDate: '2026-07-20 10:00:00',
+      departureDate: '2026-07-20 09:00:00',
+      returnDate: '2026-07-21 18:00:00',
+      visitMembers: [100003], // Neha Verma
       remarks: 'Scheduling customer visit.'
-    }, { headers: { Authorization: `Bearer ${tsToken}` } });
-    await verifyComplaintState(complaintId, 'Visit Scheduled', 19, 'Neha Verma');
+    }, { headers: { Authorization: `Bearer ${tsHeadToken}` } });
+    await verifyComplaintState(complaintId, 'Visit Scheduled', 19, 'Dev Brat');
 
-    await axios.post(`${BASE_URL}/complaints/${complaintId}/ts-review`, {
-      actionType: 'visit-complete',
-      findings: 'Observation of moisture lines and tearing.',
-      feedback: 'Genuine quality complaint.',
-      followUpRequired: false
+    await axios.post(`${BASE_URL}/complaints/${complaintId}/visit-remarks`, {
+      remarks: 'Observation of moisture lines and tearing. Genuine quality complaint.'
     }, { headers: { Authorization: `Bearer ${tsToken}` } });
-    await verifyComplaintState(complaintId, 'Under TS Review after visit', 18, 'Neha Verma');
+    await verifyComplaintState(complaintId, 'Under TS Review after visit', 18, 'Amit Sharma');
 
     await axios.post(`${BASE_URL}/complaints/${complaintId}/ts-review`, {
       actionType: 'forward',
       remarks: 'TS review complete. Forwarding to QC Engineer.'
-    }, { headers: { Authorization: `Bearer ${tsToken}` } });
+    }, { headers: { Authorization: `Bearer ${tsHeadToken}` } });
     await verifyComplaintState(complaintId, 'QC Review Pending', 21, 'Pooja Singh');
 
     // 4. QC Review (Stage 3 to 4) - Pooja Singh receives sample and forwards
@@ -172,19 +173,10 @@ async function runWorkflowTest() {
       settlementAmount: 85000,
       remarks: 'Approved credit note payout of ₹85,000.'
     }, { headers: { Authorization: `Bearer ${mktHeadToken}` } });
-    await verifyComplaintState(complaintId, 'Finance Pending', 27, 'Finance Head');
+    await verifyComplaintState(complaintId, 'Finance Pending', 27, 'Deepak Sinha');
 
-    // 10. Finance Head Approval (Stage 10 to 11) - Finance Head approves
-    console.log('\n--- Stage 10: Finance Head Approval (Finance Head) ---');
-    const finHeadToken = await getToken('finance.head@orientpaper.com');
-    await axios.post(`${BASE_URL}/complaints/${complaintId}/approve`, {
-      stage: 'finance-head',
-      remarks: 'Commercial details verified and approved.'
-    }, { headers: { Authorization: `Bearer ${finHeadToken}` } });
-    await verifyComplaintState(complaintId, 'Credit Note Pending', 83, 'Deepak Sinha');
-
-    // 11. Finance Executive CN Sync (Stage 11 to Closed) - Deepak Sinha posts CN details
-    console.log('\n--- Stage 11: Finance Credit Note Execution (Deepak Sinha) ---');
+    // 10. Finance Executive CN Preparation (Stage 10 to 11) - Deepak Sinha posts CN details
+    console.log('\n--- Stage 10: Finance Credit Note Execution (Deepak Sinha) ---');
     const finToken = await getToken('deepak.sinha@orientpaper.com');
     await axios.post(`${BASE_URL}/complaints/${complaintId}/finance`, {
       creditNoteNumber: 'SAP-CN-2026-0044',
@@ -194,6 +186,15 @@ async function runWorkflowTest() {
       companyCode: 'OPM_PAPER',
       remarks: 'Syncing credit note detail to SAP.'
     }, { headers: { Authorization: `Bearer ${finToken}` } });
+    await verifyComplaintState(complaintId, 'Credit Note Pending', 83, 'Finance Head');
+
+    // 11. Finance Head Approval (Stage 11 to Closed) - Finance Head approves and closes
+    console.log('\n--- Stage 11: Finance Head Approval (Finance Head) ---');
+    const finHeadToken = await getToken('finance.head@orientpaper.com');
+    await axios.post(`${BASE_URL}/complaints/${complaintId}/approve`, {
+      stage: 'finance-head',
+      remarks: 'Commercial details verified and approved.'
+    }, { headers: { Authorization: `Bearer ${finHeadToken}` } });
     await verifyComplaintState(complaintId, 'Closed', 28, null);
 
     console.log('\n🎉 SUCCESS: The end-to-end 11-stage dynamic workflow pipeline ran flawlessly!');

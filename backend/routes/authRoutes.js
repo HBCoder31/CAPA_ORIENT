@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { 
   login, 
+  logout,
   generateCustomerInvite, 
   activateCustomer,
   getCustomerPortalConfig,
@@ -14,6 +15,7 @@ const { sendSuccess } = require('../utils/responseHelper');
 
 // Public routes
 router.post('/login', login);
+router.post('/logout', logout);
 router.post('/activate', activateCustomer);
 router.post('/register/check', checkRegistrationIdentity);
 router.post('/register/submit', selfRegisterCustomer);
@@ -81,6 +83,20 @@ router.put(
   protect,
   restrictTo('Administrator', 'Managing Director'),
   require('../controllers/authController').updateMdApprovalLimit
+);
+
+router.get(
+  '/config/customer-assignments',
+  protect,
+  restrictTo('Administrator'),
+  require('../controllers/authController').getCustomerAssignments
+);
+
+router.put(
+  '/config/customer-assignments',
+  protect,
+  restrictTo('Administrator'),
+  require('../controllers/authController').updateCustomerAssignment
 );
 
 router.get(

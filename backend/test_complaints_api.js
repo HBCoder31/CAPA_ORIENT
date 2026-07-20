@@ -103,10 +103,10 @@ async function runTests() {
     console.log(`   Complaint ID: ${newComplaintId}`);
     console.log(`   Complaint Number: ${newComplaintNo}`);
 
-    // 7. Login as KAM (Amit Sharma amit.sharma@orientpaper.com - KAM_ID 1, who handles ITC Limited)
-    console.log('\nTest 6: Logging in as KAM (Amit Sharma) to verify assignment...');
+    // 7. Login as KAM (Dev Brat db@orientpaper.com - who handles ITC Limited)
+    console.log('\nTest 6: Logging in as KAM (Dev Brat) to verify assignment...');
     const empLoginRes = await axios.post(`${BASE_URL}/auth/login`, {
-      email: 'amit.sharma@orientpaper.com',
+      email: 'db@orientpaper.com',
       password: 'password123',
     });
     console.log('✅ Employee/KAM login successful.');

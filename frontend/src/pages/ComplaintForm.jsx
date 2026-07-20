@@ -25,8 +25,6 @@ function ComplaintForm() {
   const [invoiceLineItems, setInvoiceLineItems] = useState([]);
   
   // Complaint header fields
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
   const [priorityId, setPriorityId] = useState('');
   const [reportedChannel, setReportedChannel] = useState(isCustomer ? 'Portal' : 'Sales');
 
@@ -36,14 +34,14 @@ function ComplaintForm() {
   // Selected complaint line items
   const [selectedItems, setSelectedItems] = useState({}); // { lineItemKey: { ... } }
 
-  const [images, setImages] = useState([]); // [{ fileName, fileSize, fileType, content }]
-
-  const handleFileChange = (e) => {
+  const handleItemFileChange = (key, e) => {
     const files = Array.from(e.target.files);
     setError(null);
+    const item = selectedItems[key];
+    if (!item) return;
     
-    if (images.length + files.length > 5) {
-      setError("Maximum 5 files allowed for upload.");
+    if (item.images.length + files.length > 5) {
+      setError(`Maximum 5 files allowed for upload per item (Item ${item.lineItem}).`);
       return;
     }
 
@@ -63,22 +61,42 @@ function ComplaintForm() {
 
       const reader = new FileReader();
       reader.onloadend = () => {
-        setImages(prev => [
-          ...prev,
-          {
-            fileName: file.name,
-            fileSize: file.size,
-            fileType: file.type || `image/${ext === 'jpg' ? 'jpeg' : ext}`,
-            content: reader.result
-          }
-        ]);
+        setSelectedItems(prev => {
+          const currentItem = prev[key];
+          if (!currentItem) return prev;
+          return {
+            ...prev,
+            [key]: {
+              ...currentItem,
+              images: [
+                ...currentItem.images,
+                {
+                  fileName: file.name,
+                  fileSize: file.size,
+                  fileType: file.type || `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+                  content: reader.result
+                }
+              ]
+            }
+          };
+        });
       };
       reader.readAsDataURL(file);
     });
   };
 
-  const removeImage = (idx) => {
-    setImages(prev => prev.filter((_, i) => i !== idx));
+  const removeItemImage = (key, idx) => {
+    setSelectedItems(prev => {
+      const currentItem = prev[key];
+      if (!currentItem) return prev;
+      return {
+        ...prev,
+        [key]: {
+          ...currentItem,
+          images: currentItem.images.filter((_, i) => i !== idx)
+        }
+      };
+    });
   };
   
   // General status
@@ -192,6 +210,8 @@ function ComplaintForm() {
           categoryId: lookups.categories[0]?.Lookup_ID || '',
           defectNatureId: lookups.natures[0]?.Lookup_ID || '',
           customerRemarks: '',
+          title: '',
+          images: [],
           errors: {}
         }
       });
@@ -259,6 +279,16 @@ function ComplaintForm() {
         hasItemErrors = true;
       }
 
+      if (!item.title || !item.title.trim()) {
+        errors.title = 'Title is required';
+        hasItemErrors = true;
+      }
+
+      if (!item.customerRemarks || !item.customerRemarks.trim()) {
+        errors.customerRemarks = 'Remarks/Description are required';
+        hasItemErrors = true;
+      }
+
       validatedItems[key].errors = errors;
     });
 
@@ -273,18 +303,18 @@ function ComplaintForm() {
     try {
       const payload = {
         customerId: selectedCustomerId,
-        title,
-        description,
         priorityId,
         reportedChannel: isCustomer ? 'Portal' : (user.role === 'KAM' ? 'KAM' : 'Sales'),
-        attachments: images,
         lineItems: Object.values(selectedItems).map(item => ({
           invoiceNo: item.invoiceNo,
           lineItem: item.lineItem,
           defectiveQty: parseFloat(item.defectiveQty),
           categoryId: item.categoryId,
           defectNatureId: item.defectNatureId,
-          customerRemarks: item.customerRemarks
+          title: item.title.trim(),
+          description: item.customerRemarks.trim(),
+          customerRemarks: item.customerRemarks.trim(),
+          attachments: item.images || []
         }))
       };
 
@@ -623,6 +653,26 @@ function ComplaintForm() {
                         </button>
                       </div>
 
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Complaint Title</label>
+                        <input
+                          type="text"
+                          required
+                          value={item.title}
+                          onChange={(e) => handleItemFieldChange(key, 'title', e.target.value)}
+                          style={fieldStyle}
+                          className={`w-full px-4 py-3 rounded-2xl text-sm outline-none transition-all ${
+                            item.errors.title ? 'border-red-500!' : ''
+                          }`}
+                          placeholder="e.g. Low GSM, Moisture wrinkles..."
+                          onFocus={(e) => { e.target.style.borderColor = item.errors.title ? '#ef4444' : 'var(--accent)'; }}
+                          onBlur={(e) => { e.target.style.borderColor = item.errors.title ? '#ef4444' : 'var(--border-subtle)'; }}
+                        />
+                        {item.errors.title && (
+                          <span className="text-xs text-red-400 font-semibold">{item.errors.title}</span>
+                        )}
+                      </div>
+
                       <div className="grid md:grid-cols-3 gap-4">
                         <div className="space-y-2">
                           <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Defective Qty</label>
@@ -685,17 +735,79 @@ function ComplaintForm() {
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Defect Narrative / Remarks</label>
+                        <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Defect Narrative / Remarks (Description)</label>
                         <textarea
-                          rows="2"
+                          rows="3"
+                          required
                           value={item.customerRemarks}
                           onChange={(e) => handleItemFieldChange(key, 'customerRemarks', e.target.value)}
                           style={fieldStyle}
-                          className="w-full px-4 py-3 rounded-2xl text-sm outline-none transition-all"
-                          placeholder="Describe specific defect observation (e.g. wet rolls, torn sheets, edge cracks...)"
-                          onFocus={(e) => { e.target.style.borderColor = 'var(--accent)'; }}
-                          onBlur={(e) => { e.target.style.borderColor = 'var(--border-subtle)'; }}
+                          className={`w-full px-4 py-3 rounded-2xl text-sm outline-none transition-all ${
+                            item.errors.customerRemarks ? 'border-red-500!' : ''
+                          }`}
+                          placeholder="Describe specific defect observation in detail..."
+                          onFocus={(e) => { e.target.style.borderColor = item.errors.customerRemarks ? '#ef4444' : 'var(--accent)'; }}
+                          onBlur={(e) => { e.target.style.borderColor = item.errors.customerRemarks ? '#ef4444' : 'var(--border-subtle)'; }}
                         />
+                        {item.errors.customerRemarks && (
+                          <span className="text-xs text-red-400 font-semibold">{item.errors.customerRemarks}</span>
+                        )}
+                      </div>
+
+                      {/* Item Image Attachments */}
+                      <div className="space-y-2 pt-2">
+                        <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Attach Defect Photos</label>
+                        <div className="space-y-3">
+                          <input 
+                            type="file"
+                            multiple
+                            accept="image/*,image/jpeg,image/png,image/gif,image/webp,.jpg,.jpeg,.png,.gif,.webp,.JPG,.JPEG,.PNG,.GIF,.WEBP"
+                            onChange={(e) => handleItemFileChange(key, e)}
+                            id={`photos-${key}`}
+                            className="hidden"
+                          />
+                          <label 
+                            htmlFor={`photos-${key}`}
+                            className="w-full py-4 border border-dashed rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all hover:bg-[var(--bg-surface-2)]"
+                            style={{ borderColor: 'var(--border-subtle)' }}
+                          >
+                            <span className="text-xs font-bold" style={{ color: 'var(--accent)' }}>Upload Defect Images for this Item</span>
+                            <span className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>JPEG, PNG (Max 5 files, 20MB total)</span>
+                          </label>
+
+                          {item.images && item.images.length > 0 && (
+                            <div className="grid grid-cols-5 gap-2 pt-1">
+                              {item.images.map((img, idx) => (
+                                <div key={idx} className="relative group rounded-xl overflow-hidden aspect-square border" style={{ borderColor: 'var(--border-subtle)' }}>
+                                  <img src={img.content} alt={img.fileName} className="w-full h-full object-cover" />
+                                  <button
+                                    type="button"
+                                    onClick={() => removeItemImage(key, idx)}
+                                    className="absolute top-0.5 right-0.5 p-1 bg-red-600 rounded-full text-white opacity-90 hover:opacity-100 transition-opacity cursor-pointer"
+                                  >
+                                    <span className="text-[8px] font-black leading-none block">✕</span>
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Estimated Value for this line item */}
+                      <div className="flex justify-between items-center p-4 rounded-2xl border" style={{ background: 'rgba(16,185,129,0.05)', borderColor: 'rgba(16,185,129,0.12)' }}>
+                        <div className="space-y-0.5">
+                          <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider block">Item Est. Settlement Value</span>
+                          <span className="text-[9px] block leading-none" style={{ color: 'var(--text-muted)' }}>
+                            Calculated as: {parseFloat(item.defectiveQty) || 0} {item.unitOfMeasure} × ₹{parseFloat(item.price).toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline space-x-1 text-emerald-500">
+                          <span className="text-xs font-semibold">₹</span>
+                          <span className="text-base font-black font-mono">
+                            {((parseFloat(item.defectiveQty) || 0) * item.price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   );
@@ -714,39 +826,9 @@ function ComplaintForm() {
                 boxShadow: '0 10px 30px var(--shadow-color)'
               }}
             >
-              <h3 className="text-sm font-bold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>Complaint Information</h3>
+              <h3 className="text-sm font-bold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>Complaint Submission</h3>
               
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Complaint Title</label>
-                  <input
-                    type="text"
-                    required
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    style={fieldStyle}
-                    className="w-full px-4 py-3.5 rounded-2xl text-sm outline-none transition-all"
-                    placeholder="e.g. Low GSM or Torn Bundles"
-                    onFocus={(e) => { e.target.style.borderColor = 'var(--accent)'; }}
-                    onBlur={(e) => { e.target.style.borderColor = 'var(--border-subtle)'; }}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Problem Description</label>
-                  <textarea
-                    rows="4"
-                    required
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    style={fieldStyle}
-                    className="w-full px-4 py-3.5 rounded-2xl text-sm outline-none transition-all"
-                    placeholder="Detailed explanation of the issue..."
-                    onFocus={(e) => { e.target.style.borderColor = 'var(--accent)'; }}
-                    onBlur={(e) => { e.target.style.borderColor = 'var(--border-subtle)'; }}
-                  />
-                </div>
-
                 <div className="space-y-2">
                   <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Severity Level</label>
                   {isCustomer ? (
@@ -766,50 +848,12 @@ function ComplaintForm() {
                       onBlur={(e) => { e.target.style.borderColor = 'var(--border-subtle)'; }}
                     >
                       {lookups.priorities.map((p) => (
-                        <option key={p.Lookup_ID} value={p.Lookup_ID} className="text-slate-800 dark:text-white">{p.Lookup_Value}</option>
+                        <option key={p.Lookup_ID} value={p.Lookup_ID} className="text-slate-800 dark:text-white">
+                          {p.Lookup_Value === 'Critical' ? 'Critical (1 Day)' : p.Lookup_Value === 'High' ? 'High (3 Days)' : p.Lookup_Value === 'Medium' ? 'Medium (7 Days)' : p.Lookup_Value === 'Low' ? 'Low (14 Days)' : p.Lookup_Value}
+                        </option>
                       ))}
                     </select>
                   )}
-                </div>
-
-                {/* Image Attachments */}
-                <div className="space-y-2 pt-2">
-                  <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Attach Defect Photos</label>
-                  <div className="space-y-3">
-                    <input 
-                      type="file"
-                      multiple
-                      accept="image/*,image/jpeg,image/png,image/gif,image/webp,.jpg,.jpeg,.png,.gif,.webp,.JPG,.JPEG,.PNG,.GIF,.WEBP"
-                      onChange={handleFileChange}
-                      id="defect-photos"
-                      className="hidden"
-                    />
-                    <label 
-                      htmlFor="defect-photos"
-                      className="w-full py-4 border border-dashed rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all hover:bg-[var(--bg-surface-2)]"
-                      style={{ borderColor: 'var(--border-subtle)' }}
-                    >
-                      <span className="text-xs font-bold" style={{ color: 'var(--accent)' }}>Upload Defect Images</span>
-                      <span className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>JPEG, PNG (Max 5 files, 20MB total)</span>
-                    </label>
-
-                    {images.length > 0 && (
-                      <div className="grid grid-cols-5 gap-2 pt-1">
-                        {images.map((img, idx) => (
-                          <div key={idx} className="relative group rounded-xl overflow-hidden aspect-square border" style={{ borderColor: 'var(--border-subtle)' }}>
-                            <img src={img.content} alt={img.fileName} className="w-full h-full object-cover" />
-                            <button
-                              type="button"
-                              onClick={() => removeImage(idx)}
-                              className="absolute top-0.5 right-0.5 p-1 bg-red-600 rounded-full text-white opacity-90 hover:opacity-100 transition-opacity cursor-pointer"
-                            >
-                              <span className="text-[8px] font-black leading-none block">✕</span>
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
                 </div>
               </div>
 

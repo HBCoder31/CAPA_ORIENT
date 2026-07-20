@@ -13,6 +13,7 @@ const loginSchema = Joi.object({
   password: Joi.string().required().messages({
     'any.required': 'Password is required.',
   }),
+  isCustomer: Joi.boolean().optional(),
 });
 
 const inviteSchema = Joi.object({
@@ -65,7 +66,7 @@ async function login(req, res, next) {
       return sendError(res, error.details[0].message, 400);
     }
 
-    const { email, password } = value;
+    const { email, password, isCustomer } = value;
 
     // 1. Search in centralized Login_Master table
     const [logins] = await pool.execute(
@@ -94,6 +95,19 @@ async function login(req, res, next) {
     }
 
     const loginRecord = logins[0];
+
+    // Check if the selected tab matches the login record type
+    const isRecordCustomer = loginRecord.Login_Type_ID === 1;
+    const isRecordEmployeeOrAdmin = loginRecord.Login_Type_ID === 2 || loginRecord.Login_Type_ID === 4;
+
+    if (isCustomer !== undefined) {
+      if (isCustomer && !isRecordCustomer) {
+        return sendError(res, 'This account is registered as an Employee/Admin. Please switch to the Employee/Admin tab.', 400);
+      }
+      if (!isCustomer && !isRecordEmployeeOrAdmin) {
+        return sendError(res, 'This account is registered as a Customer. Please switch to the Customer tab.', 400);
+      }
+    }
 
     const isMatch = await bcrypt.compare(password, loginRecord.Password_Hash);
     if (!isMatch) {
@@ -134,6 +148,13 @@ async function login(req, res, next) {
         'UPDATE Employee_Master SET Last_Login = NOW() WHERE Employee_ID = ?',
         [emp.Employee_ID]
       );
+
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 8 * 60 * 60 * 1000 // 8 hours
+      });
 
       return sendSuccess(
         res,
@@ -180,6 +201,13 @@ async function login(req, res, next) {
         'UPDATE Login_Master SET Last_Login = NOW() WHERE Login_ID = ?',
         [loginRecord.Login_ID]
       );
+
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 8 * 60 * 60 * 1000 // 8 hours
+      });
 
       return sendSuccess(
         res,
@@ -614,6 +642,7 @@ async function updateWorkflowSlaConfig(req, res, next) {
 
 module.exports = {
   login,
+  logout,
   generateCustomerInvite,
   activateCustomer,
   getCustomerPortalConfig,
@@ -627,7 +656,9 @@ module.exports = {
   getMdApprovalLimit,
   updateMdApprovalLimit,
   getProfileDetails,
-  changePassword
+  changePassword,
+  getCustomerAssignments,
+  updateCustomerAssignment
 };
 
 async function getProfileDetails(req, res, next) {
@@ -635,7 +666,9 @@ async function getProfileDetails(req, res, next) {
     const isCustomer = req.user.role === 'Customer';
     if (isCustomer) {
       const [rows] = await pool.execute(
-        `SELECT c.Customer_ID, c.Customer_Name, c.Customer_Email, c.City, c.State, c.SAP_Customer_Code,
+        `SELECT c.Customer_ID, c.Customer_Name, c.Customer_Email, c.Customer_Phone,
+                c.City, c.State, c.Country, c.GSTIN, c.PAN_Number,
+                c.Billing_Address, c.Shipping_Address,
                 e.Employee_Name as KAM_Name, e.Official_Email as KAM_Email, e.Mobile_Number as KAM_Phone
          FROM Customer_Master c
          LEFT JOIN KAM_Master k ON c.KAM_ID = k.KAM_ID
@@ -737,6 +770,84 @@ async function updateMdApprovalLimit(req, res, next) {
     );
 
     return sendSuccess(res, null, 'MD approval limit updated successfully.');
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getCustomerAssignments(req, res, next) {
+  try {
+    const [assignments] = await pool.execute(`
+      SELECT 
+        cea.Assignment_ID, 
+        cea.Customer_ID, 
+        cust.Customer_Name, 
+        cea.Department_ID, 
+        d.Department_Name, 
+        cea.Employee_ID, 
+        e.Employee_Name as Executive_Name, 
+        cea.Business_Unit_ID, 
+        bu.Business_Unit_Name
+      FROM Customer_Executive_Assignment cea
+      JOIN Customer_Master cust ON cea.Customer_ID = cust.Customer_ID
+      JOIN Department_Master d ON cea.Department_ID = d.Department_ID
+      JOIN Employee_Master e ON cea.Employee_ID = e.Employee_ID
+      JOIN Business_Unit_Master bu ON cea.Business_Unit_ID = bu.Business_Unit_ID
+      WHERE cea.Is_Active = TRUE
+      ORDER BY cust.Customer_Name, d.Department_Name
+    `);
+
+    const [executives] = await pool.execute(`
+      SELECT e.Employee_ID, e.Employee_Name, e.Department_ID, r.Role_Name
+      FROM Employee_Master e
+      JOIN Role_Master r ON e.Role_ID = r.Role_ID
+      WHERE e.Is_Active = TRUE AND r.Role_ID IN (5, 7, 9, 11, 12)
+      ORDER BY e.Employee_Name
+    `);
+
+    return sendSuccess(res, { assignments, executives }, 'Customer executive assignments loaded.');
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateCustomerAssignment(req, res, next) {
+  try {
+    const { customerId, departmentId, employeeId, businessUnitId } = req.body;
+    if (!customerId || !departmentId || !employeeId || !businessUnitId) {
+      return sendError(res, 'Customer ID, Department ID, Employee ID, and Business Unit ID are required.', 400);
+    }
+
+    // Verify active employee exists in that department
+    const [emp] = await pool.execute(
+      'SELECT Employee_ID FROM Employee_Master WHERE Employee_ID = ? AND Department_ID = ? AND Is_Active = TRUE',
+      [employeeId, departmentId]
+    );
+    if (emp.length === 0) {
+      return sendError(res, 'Employee not found or inactive in the specified department.', 404);
+    }
+
+    await pool.execute(
+      `INSERT INTO Customer_Executive_Assignment (Customer_ID, Department_ID, Employee_ID, Business_Unit_ID, Assigned_By, Is_Active)
+       VALUES (?, ?, ?, ?, ?, TRUE)
+       ON DUPLICATE KEY UPDATE Employee_ID = ?, Is_Active = TRUE, Updated_On = NOW(), Assigned_By = ?`,
+      [customerId, departmentId, employeeId, businessUnitId, req.user.id, employeeId, req.user.id]
+    );
+
+    return sendSuccess(res, null, 'Customer executive assignment updated successfully.');
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function logout(req, res, next) {
+  try {
+    res.clearCookie('token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+    });
+    return sendSuccess(res, null, 'Logged out successfully.');
   } catch (err) {
     next(err);
   }

@@ -43,6 +43,9 @@ async function testSegmentKam() {
 
     // 3. Query Database to verify which KAM was assigned
     const { pool } = require('./config/db');
+    const [kamRows] = await pool.query('SELECT KAM_ID FROM KAM_Master WHERE Employee_ID = 100020');
+    const expectedKamId = kamRows[0]?.KAM_ID;
+
     const [rows] = await pool.query(`
       SELECT ch.Complaint_Number, ch.KAM_ID, ch.Current_Assignee_ID, emp.Employee_Name as Assigned_Employee
       FROM Complaint_Header ch
@@ -53,10 +56,10 @@ async function testSegmentKam() {
     const result = rows[0];
     console.log('\n🔍 Verifying assigned KAM details in DB:');
     console.log(`   - Complaint Code    : ${result.Complaint_Number}`);
-    console.log(`   - Assigned KAM ID   : ${result.KAM_ID} (Expected: 5 for Dev Brat)`);
+    console.log(`   - Assigned KAM ID   : ${result.KAM_ID} (Expected: ${expectedKamId} for Dev Brat)`);
     console.log(`   - Assigned Employee : ${result.Assigned_Employee} (Expected: Dev Brat (KAM))`);
 
-    if (parseInt(result.KAM_ID) === 5 && result.Assigned_Employee.includes('Dev Brat')) {
+    if (parseInt(result.KAM_ID) === expectedKamId && result.Assigned_Employee.includes('Dev Brat')) {
       console.log('\n🎉 SUCCESS: Segment KAM resolved to Dev Brat correctly!');
     } else {
       console.error('\n❌ FAILURE: Segment KAM did not map to Dev Brat.');

@@ -10,9 +10,18 @@ import Account from './pages/Account';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
-  const token = localStorage.getItem('token');
-  if (!token) {
+  const user = localStorage.getItem('user');
+  if (!user) {
     return <Navigate to="/login" replace />;
+  }
+  return children;
+};
+
+// Public Route Component (Redirects to dashboard if already authenticated)
+const PublicRoute = ({ children }) => {
+  const user = localStorage.getItem('user');
+  if (user) {
+    return <Navigate to="/dashboard" replace />;
   }
   return children;
 };
@@ -21,9 +30,30 @@ function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/activate-portal" element={<ActivatePortal />} />
+        <Route 
+          path="/login" 
+          element={
+            <PublicRoute>
+              <Login />
+            </PublicRoute>
+          } 
+        />
+        <Route 
+          path="/register" 
+          element={
+            <PublicRoute>
+              <Register />
+            </PublicRoute>
+          } 
+        />
+        <Route 
+          path="/activate-portal" 
+          element={
+            <PublicRoute>
+              <ActivatePortal />
+            </PublicRoute>
+          } 
+        />
         
         {/* Protected Dashboard Route */}
         <Route 

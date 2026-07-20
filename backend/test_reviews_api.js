@@ -5,6 +5,7 @@ async function runTests() {
   console.log('🧪 Starting Phase 2 CCMS Review Stages API tests...');
   let customerToken = '';
   let tsToken = '';
+  let tsEngToken = '';
   let qcToken = '';
   let complaintId = '';
   let complaintNo = '';
@@ -65,6 +66,20 @@ async function runTests() {
     complaintNo = logRes.data.data.complaintNumber;
     console.log(`✅ Complaint created. No: ${complaintNo}, ID: ${complaintId}`);
 
+    // 5b. Log in as Admin and approve KAM Verification stage
+    console.log('\nLogging in as Admin to approve KAM verification...');
+    const adminLoginRes = await axios.post(`${BASE_URL}/auth/login`, {
+      email: 'admin@orientpaper.com',
+      password: 'password123',
+    });
+    const adminToken = adminLoginRes.data.data.token;
+    await axios.post(`${BASE_URL}/complaints/${complaintId}/approve`, {
+      stage: 'kam',
+      remarks: 'Intake details confirmed by admin, forwarding to TS.',
+      severityId: prioId
+    }, { headers: { Authorization: `Bearer ${adminToken}` } });
+    console.log('✅ KAM verification approved by Admin. Complaint forwarded to TS.');
+
     // 6. Log in as TS Engineer / Head (Amit Sharma)
     console.log('\nTest 5: Logging in as TS Engineer (Amit Sharma)...');
     const tsLoginRes = await axios.post(`${BASE_URL}/auth/login`, {
@@ -74,6 +89,14 @@ async function runTests() {
     tsToken = tsLoginRes.data.data.token;
     console.log('✅ TS login successful.');
 
+    console.log('\nLogging in as TS Engineer (Neha Verma)...');
+    const tsEngLoginRes = await axios.post(`${BASE_URL}/auth/login`, {
+      email: 'neha.verma@orientpaper.com',
+      password: 'password123',
+    });
+    tsEngToken = tsEngLoginRes.data.data.token;
+    console.log('✅ TS Engineer login successful.');
+
     // 7. TS Schedules Visit
     console.log('\nTest 6: TS scheduling a customer visit...');
     const visitRes = await axios.post(
@@ -81,6 +104,9 @@ async function runTests() {
       {
         actionType: 'visit-schedule',
         visitDate: '2026-07-20 10:00:00',
+        departureDate: '2026-07-20 09:00:00',
+        returnDate: '2026-07-21 18:00:00',
+        visitMembers: [100003], // Neha Verma
         observation: 'Visual inspection shows edge cracking on raw reels.',
         recommendedAction: 'Inspect rolls and log feedback.',
         remarks: 'Scheduling customer visit for Monday.'
@@ -98,16 +124,11 @@ async function runTests() {
     // 8. TS Completes Visit
     console.log('\nTest 7: TS logging visit completion...');
     await axios.post(
-      `${BASE_URL}/complaints/${complaintId}/ts-review`,
+      `${BASE_URL}/complaints/${complaintId}/visit-remarks`,
       {
-        actionType: 'visit-complete',
-        findings: 'Verified tearing on first 3 rolls. Moisture levels normal.',
-        feedback: 'Customer requested quick replacement or credit note.',
-        followUpRequired: false,
-        observation: 'Visit complete. Roll defects confirmed.',
-        remarks: 'Visit completed successfully.'
+        remarks: 'Verified tearing on first 3 rolls. Moisture levels normal. Customer requested quick replacement or credit note.'
       },
-      { headers: { Authorization: `Bearer ${tsToken}` } }
+      { headers: { Authorization: `Bearer ${tsEngToken}` } }
     );
     console.log('✅ Visit completed.');
 
@@ -132,10 +153,10 @@ async function runTests() {
 
     // Verify department and assignee
     verifyRes = await axios.get(`${BASE_URL}/complaints/${complaintId}`, {
-      headers: { Authorization: `Bearer ${tsToken}` }
+      headers: { Authorization: `Bearer ${adminToken}` }
     });
     console.log(`   Verify Current Dept: ${verifyRes.data.data.complaint.Department_Name} (Expected: Quality Control Department)`);
-    console.log(`   Verify Current Assignee: ${verifyRes.data.data.complaint.Assignee} (Expected: Rajesh Gupta)`);
+    console.log(`   Verify Current Assignee: ${verifyRes.data.data.complaint.Assignee} (Expected: Pooja Singh)`);
     console.log(`   Verify Current Status: ${verifyRes.data.data.complaint.Status} (Expected: Under QC Review)`);
 
     // 10. Log in as QC Head (Rajesh Gupta)
@@ -161,7 +182,7 @@ async function runTests() {
 
     // Verify claim status (should be "Waiting Sample")
     verifyRes = await axios.get(`${BASE_URL}/complaints/${complaintId}`, {
-      headers: { Authorization: `Bearer ${qcToken}` }
+      headers: { Authorization: `Bearer ${adminToken}` }
     });
     console.log(`   Verify Current Status: ${verifyRes.data.data.complaint.Status} (Expected: Waiting Sample)`);
 
@@ -180,12 +201,12 @@ async function runTests() {
 
     // Verify claim status (should revert to "Under QC Review")
     verifyRes = await axios.get(`${BASE_URL}/complaints/${complaintId}`, {
-      headers: { Authorization: `Bearer ${qcToken}` }
+      headers: { Authorization: `Bearer ${adminToken}` }
     });
     console.log(`   Verify Current Status: ${verifyRes.data.data.complaint.Status} (Expected: Under QC Review)`);
 
-    // 13. QC Forwards to Operations
-    console.log('\nTest 12: QC forwarding claim to Operations...');
+    // 13. QC Forwards (goes to QC Head Pending)
+    console.log('\nTest 12: QC forwarding claim to QC Head...');
     await axios.post(
       `${BASE_URL}/complaints/${complaintId}/qc-review`,
       {
@@ -193,20 +214,40 @@ async function runTests() {
         sampleVerified: true,
         observation: 'GSM and bursting strength check failed parameters by 8%. Defect is genuine.',
         recommendation: 'Replace defective material or propose commercial credit.',
-        remarks: 'Observations compiled. Forwarding to Operations for CAPA documentation.'
+        remarks: 'Observations compiled. Forwarding to QC Head.'
       },
       { headers: { Authorization: `Bearer ${qcToken}` } }
     );
-    console.log('✅ Claim forwarded to Operations.');
+    console.log('✅ Claim forwarded to QC Head.');
 
-    // Verify department and assignee
+    // Verify QC Head Pending status
     verifyRes = await axios.get(`${BASE_URL}/complaints/${complaintId}`, {
-      headers: { Authorization: `Bearer ${qcToken}` }
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    console.log(`   Verify Current Dept: ${verifyRes.data.data.complaint.Department_Name} (Expected: Quality Control)`);
+    console.log(`   Verify Current Assignee: ${verifyRes.data.data.complaint.Assignee} (Expected: Rajesh Gupta)`);
+    console.log(`   Verify Current Status: ${verifyRes.data.data.complaint.Status} (Expected: QC Head Pending)`);
+
+    // 14. QC Head Approves
+    console.log('\nTest 13: QC Head approving and forwarding to Operations...');
+    await axios.post(
+      `${BASE_URL}/complaints/${complaintId}/approve`,
+      {
+        stage: 'qc-head',
+        remarks: 'QC observations confirmed and approved by QC Head.'
+      },
+      { headers: { Authorization: `Bearer ${qcToken}` } }
+    );
+    console.log('✅ QC Head approved.');
+
+    // Verify department and assignee after QC Head approval
+    verifyRes = await axios.get(`${BASE_URL}/complaints/${complaintId}`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
     });
     console.log(`   Verify Current Dept: ${verifyRes.data.data.complaint.Department_Name} (Expected: Operations Department)`);
-    console.log(`   Verify Current Assignee: ${verifyRes.data.data.complaint.Assignee} (Expected: Vikram Mehta)`);
+    console.log(`   Verify Current Assignee: ${verifyRes.data.data.complaint.Assignee} (Expected: Karan Patel)`);
     console.log(`   Verify Current Status: ${verifyRes.data.data.complaint.Status} (Expected: CAPA Pending)`);
-    console.log(`   Verify Timeline Logs Length: ${verifyRes.data.data.logs.length} (Expected: 6 logs)`);
+    console.log(`   Verify Timeline Logs Length: ${verifyRes.data.data.logs.length} (Expected: 9 logs)`);
 
     console.log('\n🎉 ALL PHASE 2 REVIEW STAGES TESTS PASSED SUCCESSFULLY! 🎉');
   } catch (err) {

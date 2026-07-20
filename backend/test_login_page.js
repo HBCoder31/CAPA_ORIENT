@@ -52,6 +52,65 @@ async function testLoginPage() {
       console.error('❌ Backend API returned unexpected error code on invalid login:', err.message);
     }
   }
+
+  // 4. Role-Selection Constraint: Customer tries to log in as Employee
+  try {
+    await axios.post('http://localhost:5000/api/auth/login', {
+      email: 'paper.procurement@itc.in',
+      password: 'customerpassword123',
+      isCustomer: false
+    });
+    console.error('❌ Validation fail: Allowed customer to log in via Employee tab!');
+  } catch (err) {
+    if (err.response && err.response.status === 400) {
+      console.log(`✅ Validation success: Backend blocked customer logging in as employee (HTTP ${err.response.status}).`);
+      console.log(`   - API message: "${err.response.data.message}"`);
+    } else {
+      console.error('❌ Unexpected response code for customer logging in as employee:', err.message);
+    }
+  }
+
+  // 5. Role-Selection Constraint: Employee tries to log in as Customer
+  try {
+    await axios.post('http://localhost:5000/api/auth/login', {
+      email: 'amit.sharma@orientpaper.com',
+      password: 'password123',
+      isCustomer: true
+    });
+    console.error('❌ Validation fail: Allowed employee to log in via Customer tab!');
+  } catch (err) {
+    if (err.response && err.response.status === 400) {
+      console.log(`✅ Validation success: Backend blocked employee logging in as customer (HTTP ${err.response.status}).`);
+      console.log(`   - API message: "${err.response.data.message}"`);
+    } else {
+      console.error('❌ Unexpected response code for employee logging in as customer:', err.message);
+    }
+  }
+
+  // 6. Role-Selection Constraint: Employee logs in as Employee (Success case)
+  try {
+    const loginRes = await axios.post('http://localhost:5000/api/auth/login', {
+      email: 'amit.sharma@orientpaper.com',
+      password: 'password123',
+      isCustomer: false
+    });
+    console.log(`✅ Validation success: Employee logged in via Employee tab (HTTP ${loginRes.status}).`);
+    console.log(`   - Logged-in Employee Role: ${loginRes.data.data.user.role}`);
+  } catch (err) {
+    console.error('❌ Validation fail: Employee login failed via Employee tab:', err.message);
+  }
+
+  // 7. Role-Selection Constraint: Customer logs in as Customer (Success case)
+  try {
+    const loginRes = await axios.post('http://localhost:5000/api/auth/login', {
+      email: 'paper.procurement@itc.in',
+      password: 'customerpassword123',
+      isCustomer: true
+    });
+    console.log(`✅ Validation success: Customer logged in via Customer tab (HTTP ${loginRes.status}).`);
+  } catch (err) {
+    console.error('❌ Validation fail: Customer login failed via Customer tab:', err.message);
+  }
 }
 
 testLoginPage();

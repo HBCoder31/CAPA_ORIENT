@@ -6,12 +6,14 @@ async function runLifecycleTest() {
   
   let customerToken = '';
   let tsToken = '';
+  let tsEngToken = '';
   let qcToken = '';
   let opsToken = '';
   let pmToken = '';
   let mktHeadToken = '';
   let finToken = '';
   let adminToken = '';
+  let kamToken = '';
 
   let complaintId = '';
   let complaintNo = '';
@@ -20,7 +22,7 @@ async function runLifecycleTest() {
     // 1. Authenticate all roles
     console.log('Test 1: Authenticating all lifecycle roles...');
     
-    const [t1, t2, t3, t4, t5, t6, t7, t8] = await Promise.all([
+    const [t1, t2, t3, t4, t5, t6, t7, t8, tKam, tTsEng] = await Promise.all([
       axios.post(`${BASE_URL}/auth/login`, { email: 'paper.procurement@itc.in', password: 'customerpassword123' }),
       axios.post(`${BASE_URL}/auth/login`, { email: 'amit.sharma@orientpaper.com', password: 'password123' }),
       axios.post(`${BASE_URL}/auth/login`, { email: 'rajesh.gupta@orientpaper.com', password: 'password123' }),
@@ -29,16 +31,20 @@ async function runLifecycleTest() {
       axios.post(`${BASE_URL}/auth/login`, { email: 'anjali.kapoor@orientpaper.com', password: 'password123' }),
       axios.post(`${BASE_URL}/auth/login`, { email: 'deepak.sinha@orientpaper.com', password: 'password123' }),
       axios.post(`${BASE_URL}/auth/login`, { email: 'admin@orientpaper.com', password: 'password123' }),
+      axios.post(`${BASE_URL}/auth/login`, { email: 'siddharth@orientpaper.com', password: 'password123' }),
+      axios.post(`${BASE_URL}/auth/login`, { email: 'neha.verma@orientpaper.com', password: 'password123' }),
     ]);
 
     customerToken = t1.data.data.token;
     tsToken = t2.data.data.token;
+    tsEngToken = tTsEng.data.data.token;
     qcToken = t3.data.data.token;
     opsToken = t4.data.data.token;
     pmToken = t5.data.data.token;
     mktHeadToken = t6.data.data.token;
     finToken = t7.data.data.token;
     adminToken = t8.data.data.token;
+    kamToken = tKam.data.data.token;
     
     console.log('✅ All lifecycle roles authenticated successfully.');
 
@@ -100,15 +106,15 @@ async function runLifecycleTest() {
     await axios.post(`${BASE_URL}/complaints/${complaintId}/ts-review`, {
       actionType: 'visit-schedule',
       visitDate: '2026-07-22 14:00:00',
+      departureDate: '2026-07-22 09:00:00',
+      returnDate: '2026-07-23 18:00:00',
+      visitMembers: [100003], // Neha Verma
       remarks: 'Onsite inspection needed.'
     }, { headers: { Authorization: `Bearer ${tsToken}` } });
 
-    await axios.post(`${BASE_URL}/complaints/${complaintId}/ts-review`, {
-      actionType: 'visit-complete',
-      findings: 'Verified high moisture on rolls in batch Dryer 3.',
-      feedback: 'Customer is open to credit note.',
-      followUpRequired: false
-    }, { headers: { Authorization: `Bearer ${tsToken}` } });
+    await axios.post(`${BASE_URL}/complaints/${complaintId}/visit-remarks`, {
+      remarks: 'Verified high moisture on rolls in batch Dryer 3.'
+    }, { headers: { Authorization: `Bearer ${tsEngToken}` } });
 
     // 5. TS forwards to QC
     console.log('\nTest 4: TS forwarding claim to QC...');
@@ -173,16 +179,8 @@ async function runLifecycleTest() {
     console.log(`   Verify Status: ${verifyRes.data.data.complaint.Status} (Expected: Finance Pending)`);
     console.log(`   Verify Settlement Amount in DB: ₹${verifyRes.data.data.settlement.Approved_Amount} (Expected: ₹65000)`);
 
-    // 10b. Finance Head approves settlement
-    console.log('\nTest 9b: Finance Head approving commercial payout...');
-    await axios.post(`${BASE_URL}/complaints/${complaintId}/approve`, {
-      stage: 'finance-head',
-      remarks: 'Settlement confirmed, proceeding to Credit Note sync.'
-    }, { headers: { Authorization: `Bearer ${adminToken}` } });
-    console.log('✅ Finance Head approved. Complaint is now Credit Note Pending.');
-
-    // 11. Finance issues credit note & closes complaint
-    console.log('\nTest 10: Finance issuing SAP Credit Note and closing claim...');
+    // 10b. Finance Executive prepares credit note (Stage 10)
+    console.log('\nTest 9b: Finance Executive issuing SAP Credit Note...');
     await axios.post(`${BASE_URL}/complaints/${complaintId}/finance`, {
       creditNoteNumber: 'SAP-CN-2026-9901',
       creditNoteDate: '2026-07-15',
@@ -191,26 +189,48 @@ async function runLifecycleTest() {
       companyCode: 'OPM_PAPER',
       remarks: 'SAP sync complete. Credit note posted.'
     }, { headers: { Authorization: `Bearer ${finToken}` } });
+    console.log('✅ Finance Executive prepared credit note. Complaint is now Credit Note Pending.');
+
+    // 11. Finance Head approves settlement and closes complaint (Stage 11)
+    console.log('\nTest 10: Finance Head approving commercial payout and closing claim...');
+    await axios.post(`${BASE_URL}/complaints/${complaintId}/approve`, {
+      stage: 'finance-head',
+      remarks: 'Settlement confirmed, proceeding to Credit Note sync.'
+    }, { headers: { Authorization: `Bearer ${adminToken}` } });
 
     verifyRes = await axios.get(`${BASE_URL}/complaints/${complaintId}`, {
-      headers: { Authorization: `Bearer ${finToken}` }
+      headers: { Authorization: `Bearer ${adminToken}` }
     });
     console.log(`   Verify Status: ${verifyRes.data.data.complaint.Status} (Expected: Closed)`);
     console.log(`   Verify Credit Note number in DB: ${verifyRes.data.data.creditNote.Credit_Note_Number} (Expected: SAP-CN-2026-9901)`);
 
-    // 12. Reopening closed complaint within 7 days
-    console.log('\nTest 11: Reopening closed complaint (7-day rule)...');
+    // 12. Reopening closed complaint within 7 days (KAM only, Customer blocked)
+    console.log('\nTest 11: Reopening closed complaint (7-day rule, KAM auth)...');
+    
+    // First, verify that a customer attempt fails with 403
+    try {
+      await axios.post(`${BASE_URL}/complaints/${complaintId}/action`, {
+        action: 'reopen',
+        remarks: 'Trying to reopen as customer.'
+      }, { headers: { Authorization: `Bearer ${customerToken}` } });
+      console.log('❌ Failed: Customer reopen did not throw 403');
+    } catch (e) {
+      console.log('✅ Customer reopen successfully blocked (403).');
+    }
+
+    // Now reopen using KAM token
     await axios.post(`${BASE_URL}/complaints/${complaintId}/action`, {
       action: 'reopen',
-      remarks: 'Moisture issue still persist in replacement bundle. Reopening.'
-    }, { headers: { Authorization: `Bearer ${customerToken}` } });
+      remarks: 'Moisture issue still persist in replacement bundle. Reopening.',
+      targetStageId: 2
+    }, { headers: { Authorization: `Bearer ${kamToken}` } });
 
     verifyRes = await axios.get(`${BASE_URL}/complaints/${complaintId}`, {
-      headers: { Authorization: `Bearer ${tsToken}` }
+      headers: { Authorization: `Bearer ${adminToken}` }
     });
     console.log(`   Verify Status after Reopen: ${verifyRes.data.data.complaint.Status} (Expected: Under TS Review)`);
-    console.log(`   Verify Assignee: ${verifyRes.data.data.complaint.Assignee} (Expected: Amit Sharma)`);
-    console.log(`   Total Timeline Logs Length: ${verifyRes.data.data.logs.length} (Expected: 14 logs)`);
+    console.log(`   Verify Assignee: ${verifyRes.data.data.complaint.Assignee} (Expected: Neha Verma)`);
+    console.log(`   Total Timeline Logs Length: ${verifyRes.data.data.logs.length} (Expected: 15 logs)`);
 
     console.log('\n🎉 CCMS END-TO-END COMPLETE LIFECYCLE INTEGRATION TEST PASSED! 🎉');
   } catch (err) {

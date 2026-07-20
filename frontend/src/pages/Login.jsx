@@ -3,12 +3,13 @@ import axios from 'axios';
 import { Mail, Lock, User, ShieldAlert, ArrowRight, Loader2, Landmark, Building2 } from 'lucide-react';
 import { gsap } from 'gsap';
 import ThemeToggle from '../components/ThemeToggle';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import logoImg from '../assets/logo.png';
 
 const API_URL = 'http://localhost:5000/api/auth';
 
 function Login() {
+  const navigate = useNavigate();
   const location = useLocation();
   const [isCustomer, setIsCustomer] = useState(false);
   const [email, setEmail] = useState('');
@@ -74,12 +75,14 @@ function Login() {
     setInfoMessage(null);
 
     try {
-      const response = await axios.post(`${API_URL}/login`, { email, password });
-      const { token, user } = response.data.data;
-      localStorage.setItem('token', token);
+      const response = await axios.post(`${API_URL}/login`, { email, password, isCustomer }, { withCredentials: true });
+      const { user, token } = response.data.data;
+      if (token) {
+        localStorage.setItem('token', token);
+      }
       localStorage.setItem('user', JSON.stringify(user));
       setSuccess(true);
-      setTimeout(() => { window.location.href = '/dashboard'; }, 1000);
+      setTimeout(() => { navigate('/dashboard', { replace: true }); }, 1000);
     } catch (err) {
       setError(
         err.response?.data?.message ||

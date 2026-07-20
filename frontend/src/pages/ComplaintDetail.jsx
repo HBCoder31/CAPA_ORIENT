@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import Layout from '../components/Layout';
-import { 
-  ArrowLeft, 
-  Clock, 
-  User, 
+import {
+  ArrowLeft,
+  Clock,
+  User,
   AlertTriangle,
   Building,
   DollarSign,
@@ -17,14 +17,16 @@ import {
   ShieldCheck,
   Ban,
   TrendingUp,
-  RotateCcw
+  RotateCcw,
+  Check
 } from 'lucide-react';
 import { gsap } from 'gsap';
+import { formatStatus } from './Dashboard';
 
 function ComplaintDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  
+
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   const isEmployee = user.role !== 'Customer';
 
@@ -33,7 +35,7 @@ function ComplaintDetail() {
   const [qcData, setQcData] = useState(null);
   const [capaData, setCapaData] = useState(null);
   const [employees, setEmployees] = useState([]);
-  
+
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -41,18 +43,22 @@ function ComplaintDetail() {
   const [actionSuccess, setActionSuccess] = useState(null);
 
   // TS Form States
-  const [tsAction, setTsAction] = useState('forward'); // 'forward', 'clarify', 'visit-schedule', 'visit-complete'
+  const [tsAction, setTsAction] = useState('forward'); // 'forward', 'visit-schedule', 'visit-complete'
   const [tsObservation, setTsObservation] = useState('');
-  const [tsClarifyReq, setTsClarifyReq] = useState(false);
-  const [tsSampleReq, setTsSampleReq] = useState(false);
   const [tsVisitReq, setTsVisitReq] = useState(false);
   const [tsRecAction, setTsRecAction] = useState('');
   const [tsCloseReq, setTsCloseReq] = useState(false);
   const [tsRemarks, setTsRemarks] = useState('');
-  const [tsVisitDate, setTsVisitDate] = useState('');
+  // Visit scheduling (TS Head only)
+  const [tsVisitMemberCount, setTsVisitMemberCount] = useState(1);
+  const [tsVisitMembers, setTsVisitMembers] = useState(['', '', '']); // up to 3 employee IDs
+  const [tsDepartureDate, setTsDepartureDate] = useState('');
+  const [tsReturnDate, setTsReturnDate] = useState('');
+  // Visit complete
   const [tsFindings, setTsFindings] = useState('');
   const [tsFeedback, setTsFeedback] = useState('');
   const [tsFollowUp, setTsFollowUp] = useState(false);
+  const [tsVisitEngineerId, setTsVisitEngineerId] = useState(''); // kept for visit-complete display
 
   // QC Form States
   const [qcAction, setQcAction] = useState('forward'); // 'forward', 'sample-request', 'sample-receive'
@@ -65,6 +71,10 @@ function ComplaintDetail() {
   const [qcSampleRecDate, setQcSampleRecDate] = useState('');
   const [qcCourierDetails, setQcCourierDetails] = useState('');
   const [qcSampleCondition, setQcSampleCondition] = useState('');
+  const [qcImageComments, setQcImageComments] = useState({});
+  const [qcImageReplies, setQcImageReplies] = useState({});
+  const [confirmSampleRcvDate, setConfirmSampleRcvDate] = useState('');
+  const [qcSampleContactEmployeeId, setQcSampleContactEmployeeId] = useState('');
 
   // CAPA Form States
   const [capaRootCause, setCapaRootCause] = useState('');
@@ -97,6 +107,9 @@ function ComplaintDetail() {
 
   // Reopen Form State
   const [reopenRemarks, setReopenRemarks] = useState('');
+  const [reopenTargetStageId, setReopenTargetStageId] = useState('2');
+
+  const [memberRemarks, setMemberRemarks] = useState('');
 
   const detailRef = useRef(null);
 
@@ -105,7 +118,7 @@ function ComplaintDetail() {
       setLoading(true);
       setError(null);
       setActionSuccess(null);
-      
+
       const [res, tsRes, qcRes, capaRes, empRes, lookupRes] = await Promise.all([
         api.get(`/complaints/${id}`),
         isEmployee ? api.get(`/complaints/${id}/ts-review`) : Promise.resolve({ data: { data: null } }),
@@ -114,7 +127,7 @@ function ComplaintDetail() {
         isEmployee ? api.get('/complaints/employees') : Promise.resolve({ data: { data: [] } }),
         isEmployee ? api.get('/complaints/lookups') : Promise.resolve({ data: { data: { priorities: [] } } })
       ]);
-      
+
       setData(res.data.data);
       if (res.data.data?.complaint) {
         setKamSeverityId(res.data.data.complaint.Priority_ID || '');
@@ -134,12 +147,24 @@ function ComplaintDetail() {
       if (tsRes.data.data?.tsDetails) {
         const d = tsRes.data.data.tsDetails;
         setTsObservation(d.Technical_Observation || '');
-        setTsClarifyReq(!!d.Clarification_Required);
-        setTsSampleReq(!!d.Sample_Required);
         setTsVisitReq(!!d.Visit_Required);
         setTsRecAction(d.Recommended_Action || '');
         setTsCloseReq(!!d.Can_Close_Complaint);
         setTsRemarks(d.Remarks || '');
+      }
+      // Pre-fill visit members if a visit has been scheduled
+      if (tsRes.data.data?.visitMembers?.length > 0) {
+        const members = tsRes.data.data.visitMembers;
+        const memberIds = members.map(m => String(m.Employee_ID));
+        const count = Math.min(Math.max(memberIds.length, 1), 3);
+        setTsVisitMemberCount(count);
+        const paddedIds = [...memberIds, '', ''].slice(0, 3);
+        setTsVisitMembers(paddedIds);
+      }
+      if (tsRes.data.data?.visits?.length > 0) {
+        const v = tsRes.data.data.visits[0];
+        if (v.Departure_Date) setTsDepartureDate(v.Departure_Date.substring(0, 16));
+        if (v.Return_Date) setTsReturnDate(v.Return_Date.substring(0, 16));
       }
 
       // Pre-fill QC details if exists
@@ -231,17 +256,24 @@ function ComplaintDetail() {
       const payload = {
         actionType: tsAction,
         observation: tsObservation,
-        clarificationRequired: tsClarifyReq,
-        sampleRequired: tsSampleReq,
         visitRequired: tsVisitReq,
         recommendedAction: tsRecAction,
         canCloseComplaint: tsCloseReq,
         remarks: tsRemarks,
-        visitDate: tsVisitDate,
-        findings: tsFindings,
-        feedback: tsFeedback,
-        followUpRequired: tsFollowUp
       };
+
+      if (tsAction === 'visit-schedule') {
+        const selectedMembers = tsVisitMembers.slice(0, tsVisitMemberCount).filter(Boolean);
+        payload.visitMembers = selectedMembers;
+        payload.departureDate = tsDepartureDate;
+        payload.returnDate = tsReturnDate;
+      }
+
+      if (tsAction === 'visit-complete') {
+        payload.findings = tsFindings;
+        payload.feedback = tsFeedback;
+        payload.followUpRequired = tsFollowUp;
+      }
 
       await api.post(`/complaints/${id}/ts-review`, payload);
       setActionSuccess('Technical Services review action recorded.');
@@ -253,23 +285,47 @@ function ComplaintDetail() {
     }
   };
 
+  const handleMemberRemarksSubmit = async (e) => {
+    e.preventDefault();
+    setActionError(null);
+    setSubmitting(true);
+    try {
+      await api.post(`/complaints/${id}/visit-remarks`, { remarks: memberRemarks });
+      setActionSuccess('Field visit remarks submitted successfully.');
+      setMemberRemarks('');
+      await loadAllData();
+    } catch (err) {
+      setActionError(err.response?.data?.message || 'Failed to submit visit remarks.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleQcSubmit = async (e) => {
     e.preventDefault();
     setActionError(null);
     setSubmitting(true);
 
     try {
+      const imageResponses = Object.keys(qcImageComments).map(attId => ({
+        attachmentId: parseInt(attId, 10),
+        qcRemarks: qcImageComments[attId] || '',
+        replyImage: qcImageReplies[attId] || null
+      }));
+
       const payload = {
         actionType: qcAction,
         sampleVerified: qcVerified,
         observation: qcObservation,
         recommendation: qcRecommendation,
         remarks: qcRemarks,
+        sampleContactEmployeeId: qcSampleContactEmployeeId || null,
         sampleRequestDate: qcSampleReqDate,
         sampleDispatchedDate: qcSampleDispDate,
         sampleReceivedDate: qcSampleRecDate,
         courierDetails: qcCourierDetails,
-        sampleCondition: qcSampleCondition
+        sampleCondition: qcSampleCondition,
+        imageResponses
       };
 
       await api.post(`/complaints/${id}/qc-review`, payload);
@@ -407,7 +463,8 @@ function ComplaintDetail() {
     try {
       const payload = {
         action: 'reopen',
-        remarks: reopenRemarks
+        remarks: reopenRemarks,
+        targetStageId: parseInt(reopenTargetStageId, 10)
       };
 
       await api.post(`/complaints/${id}/action`, payload);
@@ -435,7 +492,7 @@ function ComplaintDetail() {
     return (
       <Layout>
         <div className="space-y-4">
-          <button 
+          <button
             onClick={() => navigate('/dashboard')}
             className="flex items-center space-x-2 text-slate-400 hover:text-slate-200 transition-colors text-sm font-semibold cursor-pointer"
           >
@@ -454,6 +511,65 @@ function ComplaintDetail() {
   const { complaint, lineItems, logs, settlement, creditNote } = data;
   const isClosed = complaint.Status === 'Closed';
 
+  const stages = [];
+  stages.push({ name: 'Logged', id: 17 });
+  stages.push({ name: 'TS Review', id: 18 });
+
+  const hasVisit = tsData?.visits?.length > 0 || complaint.Complaint_Status_ID === 19;
+  if (hasVisit) {
+    stages.push({ name: 'Visit Scheduled', id: 19 });
+    stages.push({ name: 'Visit Completed', id: 18, isVisitCompletedMarker: true });
+  }
+
+  const hasSample = qcData?.samples?.length > 0 || complaint.Complaint_Status_ID === 20;
+  if (hasSample) {
+    stages.push({ name: 'Sample Req.', id: 20 });
+    stages.push({ name: 'Sample Rcvd.', id: 21 });
+  } else {
+    stages.push({ name: 'QC Review', id: 21 });
+  }
+
+  stages.push({ name: 'QC Head', id: 84 });
+  stages.push({ name: 'CAPA', id: 22 });
+  stages.push({ name: 'Ops Head', id: 23 });
+  stages.push({ name: 'Mktg PM', id: 24 });
+  stages.push({ name: 'Mktg Head', id: 25 });
+  stages.push({ name: 'MD Approval', id: 26 });
+  stages.push({ name: 'Fin Exec', id: 27 });
+  stages.push({ name: 'Fin Head', id: 83 });
+  stages.push({ name: 'Closed', id: 28 });
+
+  const getActiveIdx = () => {
+    const statusId = complaint.Complaint_Status_ID;
+    if (statusId === 28 || statusId === 29) {
+      return stages.length - 1;
+    }
+    let activeIdx = 0;
+    for (let i = 0; i < stages.length; i++) {
+      const stage = stages[i];
+      if (stage.id === statusId) {
+        if (statusId === 18) {
+          const visitDetails = tsData?.visits?.[0];
+          const isVisitComplete = visitDetails?.Visit_Status_ID === 52;
+          if (stage.isVisitCompletedMarker) {
+            if (isVisitComplete) activeIdx = i;
+          } else {
+            if (!isVisitComplete) activeIdx = i;
+          }
+        } else {
+          activeIdx = i;
+        }
+      }
+    }
+    return activeIdx;
+  };
+  const currentActiveIdx = getActiveIdx();
+
+  // Determine if downstream sections should be shown based on current stage
+  const showCapaSummary = [22, 23, 24, 25, 26, 27, 83, 28, 29].includes(complaint.Complaint_Status_ID);
+  const showSettlementSummary = [25, 26, 27, 83, 28, 29].includes(complaint.Complaint_Status_ID);
+  const showCreditNoteSummary = [27, 83, 28, 29].includes(complaint.Complaint_Status_ID);
+
   // Authorize panels mapping
   const isTsDepartment = [1, 7].includes(complaint.Current_Department_ID);
   const isQcDepartment = [2, 8].includes(complaint.Current_Department_ID);
@@ -467,8 +583,8 @@ function ComplaintDetail() {
   const canEditTs = isEmployee && isTsDepartment && ['Administrator', 'TS Head', 'TS Engineer'].includes(user.role);
   const canEditQc = isEmployee && isQcDepartment && ['Administrator', 'QC Head', 'QC Engineer'].includes(user.role);
   const canEditCapa = isEmployee && isOpsDepartment && ['Administrator', 'Operations Head', 'Operations Engineer'].includes(user.role);
-  const canEditFinance = isEmployee && isFinanceDept && complaint.Complaint_Status_ID === 83 && ['Administrator', 'Finance Executive'].includes(user.role);
-  
+  const canEditFinance = isEmployee && isFinanceDept && complaint.Complaint_Status_ID === 27 && ['Administrator', 'Finance Executive'].includes(user.role);
+
   // Specific approvals authority
   const canApproveKam = isEmployee && complaint.Complaint_Status_ID === 17 && ['Administrator', 'KAM'].includes(user.role);
   const canApproveQcHead = isEmployee && isQcDepartment && complaint.Complaint_Status_ID === 84 && ['Administrator', 'QC Head'].includes(user.role);
@@ -476,13 +592,13 @@ function ComplaintDetail() {
   const canApproveMarketingPm = isEmployee && isMarketingDept && complaint.Complaint_Status_ID === 24 && ['Administrator', 'Marketing Head', 'Marketing Executive'].includes(user.role);
   const canApproveMarketingHead = isEmployee && isMarketingDept && complaint.Complaint_Status_ID === 25 && ['Administrator', 'Marketing Head'].includes(user.role);
   const canApproveMd = isEmployee && isMdDept && complaint.Complaint_Status_ID === 26 && ['Administrator', 'Managing Director'].includes(user.role);
-  const canApproveFinanceHead = isEmployee && isFinanceDept && complaint.Complaint_Status_ID === 27 && ['Administrator', 'Finance Head'].includes(user.role);
+  const canApproveFinanceHead = isEmployee && isFinanceDept && complaint.Complaint_Status_ID === 83 && ['Administrator', 'Finance Head'].includes(user.role);
 
   // General back-and-forth action panel is visible to anyone who is authorized to do approvals/work on the stage
   const canTakeTimelineAction = canEditTs || canEditQc || canEditCapa || canApproveQcHead || canApproveOpsHead || canApproveMarketingPm || canApproveMarketingHead || canApproveMd || canApproveKam || canApproveFinanceHead;
 
-  // Reopen condition check: must be closed, and caller is customer or KAM
-  const canReopen = isClosed && (user.role === 'Customer' || user.role === 'KAM' || user.role === 'Administrator');
+  // Reopen condition check: must be closed, and caller is KAM or Admin
+  const canReopen = isClosed && (user.role === 'KAM' || user.role === 'Administrator');
 
   const fieldStyle = {
     background: 'var(--bg-surface-2)',
@@ -493,10 +609,10 @@ function ComplaintDetail() {
   return (
     <Layout>
       <div ref={detailRef} className="space-y-8">
-        
+
         {/* Navigation & Status Header */}
         <div className="reveal-back flex justify-between items-center">
-          <button 
+          <button
             onClick={() => navigate('/dashboard')}
             className="flex items-center space-x-2 transition-colors text-sm font-bold cursor-pointer"
             style={{ color: 'var(--text-secondary)' }}
@@ -506,23 +622,23 @@ function ComplaintDetail() {
             <ArrowLeft className="w-4 h-4" />
             <span>Back to Dashboard</span>
           </button>
-          
+
           <div className="flex space-x-2">
-            <span 
+            <span
               className="px-3.5 py-1.5 rounded-xl text-xs font-bold font-mono border"
               style={
-                complaint.Severity === 'Critical' 
+                complaint.Severity === 'Critical'
                   ? { background: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.25)', color: '#f87171' }
                   : complaint.Severity === 'High'
-                  ? { background: 'rgba(249, 115, 22, 0.1)', borderColor: 'rgba(249, 115, 22, 0.25)', color: '#fb923c' }
-                  : complaint.Severity === 'Medium'
-                  ? { background: 'rgba(234, 179, 8, 0.1)', borderColor: 'rgba(234, 179, 8, 0.25)', color: '#facc15' }
-                  : { background: 'var(--bg-surface-2)', borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }
+                    ? { background: 'rgba(249, 115, 22, 0.1)', borderColor: 'rgba(249, 115, 22, 0.25)', color: '#fb923c' }
+                    : complaint.Severity === 'Medium'
+                      ? { background: 'rgba(234, 179, 8, 0.1)', borderColor: 'rgba(234, 179, 8, 0.25)', color: '#facc15' }
+                      : { background: 'var(--bg-surface-2)', borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }
               }
             >
               {complaint.Severity} Severity
             </span>
-            <span 
+            <span
               className="px-3.5 py-1.5 rounded-xl text-xs font-bold border"
               style={
                 complaint.Status === 'Closed'
@@ -530,14 +646,14 @@ function ComplaintDetail() {
                   : { background: 'var(--accent)', borderColor: 'var(--border-subtle)', color: '#fff' }
               }
             >
-              {complaint.Status === 'Submitted' ? 'Submitted (Pending KAM Review)' : complaint.Status}
+              {formatStatus(complaint.Status, complaint.Designation)}
             </span>
           </div>
         </div>
 
         {/* Success Alert */}
         {actionSuccess && (
-          <div 
+          <div
             className="p-4 border rounded-2xl flex items-center space-x-3 text-sm animate-fade-in"
             style={{ background: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.25)', color: '#34d399' }}
           >
@@ -546,14 +662,193 @@ function ComplaintDetail() {
           </div>
         )}
 
+        {/* Horizontal Workflow Stepper */}
+        <div 
+          className="reveal-panel p-6 rounded-3xl border overflow-x-auto whitespace-nowrap"
+          style={{
+            background: 'var(--bg-surface)',
+            borderColor: 'var(--border-subtle)',
+            boxShadow: '0 10px 30px var(--shadow-color)'
+          }}
+        >
+          <h3 className="text-xs font-bold uppercase tracking-wider mb-6" style={{ color: 'var(--text-secondary)' }}>
+            Workflow Progress Stepper
+          </h3>
+          <div className="flex items-center justify-between min-w-[900px] px-4 relative">
+            
+            {/* Background line connecting all stages */}
+            <div 
+              className="absolute left-[36px] right-[36px] h-0.5" 
+              style={{ background: 'var(--border-subtle)', top: '15px', zIndex: 0 }}
+            />
+
+             {/* Foreground active line */}
+            <div 
+              className="absolute left-[36px] h-0.5 transition-all duration-500 ease-out" 
+              style={{ 
+                background: 'var(--accent)', 
+                top: '15px', 
+                width: `${(currentActiveIdx / (stages.length - 1)) * 92}%`,
+                zIndex: 0 
+              }}
+            />
+
+            {stages.map((stage, idx) => {
+
+              const isPassed = idx < currentActiveIdx;
+              const isActive = idx === currentActiveIdx;
+
+              return (
+                <div key={idx} className="flex flex-col items-center relative z-10 shrink-0 select-none">
+                  {/* Stepper node circle */}
+                  <div 
+                    className={`w-8 h-8 rounded-full border-2 flex items-center justify-center font-bold text-xs transition-all duration-300 ${
+                      isActive 
+                        ? 'scale-110 shadow-lg shadow-emerald-500/20' 
+                        : ''
+                    }`}
+                    style={{
+                      background: isActive 
+                        ? 'var(--accent)' 
+                        : isPassed 
+                        ? 'rgba(16, 185, 129, 0.1)' 
+                        : 'var(--bg-surface-2)',
+                      borderColor: isActive 
+                        ? 'var(--accent)' 
+                        : isPassed 
+                        ? 'rgba(16, 185, 129, 0.5)' 
+                        : 'var(--border-subtle)',
+                      color: isActive 
+                        ? '#fff' 
+                        : isPassed 
+                        ? '#34d399' 
+                        : 'var(--text-muted)'
+                    }}
+                  >
+                    {isPassed ? (
+                      <Check className="w-4 h-4" />
+                    ) : (
+                      idx + 1
+                    )}
+                  </div>
+
+                  {/* Stepper node label */}
+                  <span 
+                    className={`text-[10px] font-bold mt-2 font-sans tracking-wide uppercase transition-colors duration-300`}
+                    style={{ 
+                      color: isActive 
+                        ? 'var(--accent)' 
+                        : isPassed 
+                        ? 'var(--text-secondary)' 
+                        : 'var(--text-muted)' 
+                    }}
+                  >
+                    {stage.name}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Department Head Overdue Sample Confirmation Panel */}
+        {data.showSampleEscalationToHead && (
+          <div 
+            className="reveal-panel p-6 rounded-3xl border space-y-4"
+            style={{
+              background: 'rgba(239, 68, 68, 0.05)',
+              borderColor: 'rgba(239, 68, 68, 0.25)',
+              boxShadow: '0 10px 30px var(--shadow-color)'
+            }}
+          >
+            <div className="flex items-center space-x-2 text-red-400">
+              <AlertOctagon className="w-6 h-6 shrink-0 animate-pulse" />
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-wider">Overdue Physical Sample Confirmation Required</h3>
+                <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>The physical sample has not been received within the 7-day grace window. As QC Head / Admin, please confirm receipt details below to resume the SLA.</p>
+              </div>
+            </div>
+
+            <form 
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setActionError(null);
+                setSubmitting(true);
+                try {
+                  const dispInput = document.getElementById('escal_disp_date').value;
+                  const rcvInput = document.getElementById('escal_rcv_date').value;
+                  const condInput = document.getElementById('escal_condition').value;
+                  
+                  const payload = {
+                    actionType: 'confirm-sample-received',
+                    sampleDispatchedDate: dispInput || null,
+                    sampleReceivedDate: rcvInput || new Date(),
+                    sampleCondition: condInput || 'Good',
+                    remarks: 'QC Head override for overdue sample receipt.'
+                  };
+
+                  await api.post(`/complaints/${id}/qc-review`, payload);
+                  setActionSuccess('Overdue sample receipt confirmed. SLA has been resumed with a 3-day grace period.');
+                  await loadAllData();
+                } catch (err) {
+                  setActionError(err.response?.data?.message || 'Failed to confirm sample receipt.');
+                } finally {
+                  setSubmitting(false);
+                }
+              }} 
+              className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end"
+            >
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase block text-slate-400">Dispatched Date (Optional)</label>
+                <input
+                  type="date"
+                  id="escal_disp_date"
+                  style={fieldStyle}
+                  className="w-full px-3 py-1.5 rounded-xl text-xs bg-slate-900 text-white outline-none"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase block text-slate-400">Received Date</label>
+                <input
+                  type="date"
+                  id="escal_rcv_date"
+                  required
+                  defaultValue={new Date().toISOString().substring(0, 10)}
+                  style={fieldStyle}
+                  className="w-full px-3 py-1.5 rounded-xl text-xs bg-slate-900 text-white outline-none"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase block text-slate-400">Sample Condition</label>
+                <input
+                  type="text"
+                  id="escal_condition"
+                  defaultValue="Good"
+                  style={fieldStyle}
+                  className="w-full px-3 py-1.5 rounded-xl text-xs bg-slate-900 text-white outline-none"
+                  placeholder="e.g. Wet packaging, OK"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="py-2 px-4 bg-red-600 hover:bg-red-700 transition-colors text-white font-bold rounded-xl text-xs cursor-pointer flex justify-center items-center space-x-1"
+                style={{ minHeight: '38px' }}
+              >
+                <span>Confirm Receipt</span>
+              </button>
+            </form>
+          </div>
+        )}
+
         {/* 2-column details section */}
         <div className="grid lg:grid-cols-12 gap-8">
-          
+
           {/* Left panel: Info & Lines list */}
           <div className="lg:col-span-8 space-y-6">
-            
+
             {/* Header info card */}
-            <div 
+            <div
               className="reveal-panel p-6 md:p-8 rounded-3xl space-y-4 relative overflow-hidden"
               style={{
                 background: 'var(--bg-surface)',
@@ -565,7 +860,7 @@ function ComplaintDetail() {
                 <span className="text-xs font-bold font-mono uppercase tracking-widest" style={{ color: 'var(--accent)' }}>{complaint.Complaint_Number}</span>
                 <h1 className="text-3xl font-extrabold tracking-tight mt-1" style={{ color: 'var(--text-primary)' }}>{complaint.Complaint_Title}</h1>
               </div>
-              
+
               <div className="space-y-2 border-t pt-4" style={{ borderColor: 'var(--border-subtle)' }}>
                 <span className="text-xs font-bold uppercase tracking-wider block" style={{ color: 'var(--text-muted)' }}>Description</span>
                 <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>{complaint.Complaint_Description}</p>
@@ -576,7 +871,7 @@ function ComplaintDetail() {
                   <span className="text-xs font-bold uppercase tracking-wider block" style={{ color: 'var(--text-muted)' }}>Claimant Attachments</span>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-1">
                     {data.attachments.map((att) => (
-                      <a 
+                      <a
                         key={att.Attachment_ID}
                         href={`http://localhost:5000/${att.File_Path}`}
                         target="_blank"
@@ -584,7 +879,7 @@ function ComplaintDetail() {
                         className="group relative rounded-2xl overflow-hidden aspect-video border transition-all duration-300 hover:scale-102 hover:border-[var(--accent)]"
                         style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-surface-2)' }}
                       >
-                        <img 
+                        <img
                           src={`http://localhost:5000/${att.File_Path}`}
                           alt={att.File_Name}
                           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
@@ -597,10 +892,48 @@ function ComplaintDetail() {
                   </div>
                 </div>
               )}
+
+              {/* QC Image Response Logs */}
+              {data.attachments && data.attachments.some(att => att.QC_Remarks || att.Reply_File_Path) && (
+                <div className="space-y-3 border-t pt-4" style={{ borderColor: 'var(--border-subtle)' }}>
+                  <span className="text-xs font-bold uppercase tracking-wider block" style={{ color: 'var(--text-muted)' }}>Quality Control Image Review Log</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {data.attachments
+                      .filter(att => att.QC_Remarks || att.Reply_File_Path)
+                      .map((att) => (
+                        <div 
+                          key={att.Attachment_ID} 
+                          className="p-3.5 rounded-2xl border space-y-3"
+                          style={{ background: 'var(--bg-surface-2)', borderColor: 'var(--border-subtle)' }}
+                        >
+                          <div className="flex items-center space-x-3 justify-between">
+                            <div className="space-y-1">
+                              <span className="text-[9px] font-bold uppercase block text-slate-500">Customer image</span>
+                              <img src={`http://localhost:5000/${att.File_Path}`} alt="" className="w-14 h-14 rounded-lg object-cover border" style={{ borderColor: 'var(--border-subtle)' }} />
+                            </div>
+                            {att.Reply_File_Path && (
+                              <div className="space-y-1 text-right">
+                                <span className="text-[9px] font-bold uppercase block text-slate-500">QC Reply image</span>
+                                <a href={`http://localhost:5000/${att.Reply_File_Path}`} target="_blank" rel="noopener noreferrer">
+                                  <img src={`http://localhost:5000/${att.Reply_File_Path}`} alt="" className="w-14 h-14 rounded-lg object-cover border inline-block" style={{ borderColor: 'var(--border-subtle)' }} />
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                          
+                          <div className="space-y-1 border-t pt-2" style={{ borderColor: 'var(--border-subtle)' }}>
+                            <span className="text-[9px] font-bold uppercase block text-slate-400">QC Observations Remarks:</span>
+                            <p className="text-xs italic" style={{ color: 'var(--text-secondary)' }}>{att.QC_Remarks || 'No comment provided.'}</p>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Claimed items grid */}
-            <div 
+            <div
               className="reveal-panel p-6 rounded-3xl space-y-4"
               style={{
                 background: 'var(--bg-surface)',
@@ -609,7 +942,7 @@ function ComplaintDetail() {
               }}
             >
               <h3 className="text-sm font-bold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>Claimed Products & Line Items</h3>
-              
+
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
@@ -657,9 +990,97 @@ function ComplaintDetail() {
               </div>
             </div>
 
+            {/* Display Scheduled Customer Visit Details & Team Remarks */}
+            {tsData?.visits?.length > 0 && (
+              <div
+                className="reveal-panel p-6 rounded-3xl space-y-4"
+                style={{
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  boxShadow: '0 10px 30px var(--shadow-color)'
+                }}
+              >
+                <div className="flex items-center space-x-2 text-sky-500">
+                  <Calendar className="w-5 h-5" />
+                  <h3 className="text-sm font-bold uppercase tracking-wider">Scheduled Customer Visit</h3>
+                </div>
+
+                {tsData.visits.map((visit, vIdx) => (
+                  <div key={vIdx} className="space-y-4">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-xs font-semibold">
+                      <div>
+                        <span className="block text-[9px] uppercase font-bold" style={{ color: 'var(--text-muted)' }}>Departure Date</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>
+                          {visit.Departure_Date ? new Date(visit.Departure_Date).toLocaleString() : 'N/A'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="block text-[9px] uppercase font-bold" style={{ color: 'var(--text-muted)' }}>Return Date</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>
+                          {visit.Return_Date ? new Date(visit.Return_Date).toLocaleString() : 'N/A'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="block text-[9px] uppercase font-bold" style={{ color: 'var(--text-muted)' }}>Status</span>
+                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] ${visit.Visit_Status_ID === 52 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/25' : 'bg-amber-500/10 text-amber-400 border border-amber-500/25'}`}>
+                          {visit.Visit_Status_ID === 52 ? 'Completed' : 'Scheduled / Active'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {visit.Remarks && (
+                      <div className="p-3.5 rounded-xl border text-xs" style={{ background: 'var(--bg-surface-2)', borderColor: 'var(--border-subtle)' }}>
+                        <span className="block text-[9px] uppercase font-bold mb-1" style={{ color: 'var(--text-muted)' }}>Visit Objectives / Notes</span>
+                        <p style={{ color: 'var(--text-secondary)' }}>{visit.Remarks}</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {tsData?.visitMembers?.length > 0 && (
+                  <div className="space-y-3 pt-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider block" style={{ color: 'var(--text-muted)' }}>Assigned Visit Members & Field Reports</span>
+                    <div className="grid gap-3">
+                      {tsData.visitMembers.map((member, mIdx) => (
+                        <div
+                          key={mIdx}
+                          className="p-3.5 rounded-2xl border flex flex-col md:flex-row md:items-start justify-between gap-3 text-xs"
+                          style={{ background: 'var(--bg-surface-2)', borderColor: 'var(--border-subtle)' }}
+                        >
+                          <div>
+                            <span className="font-bold block" style={{ color: 'var(--text-primary)' }}>{member.Employee_Name}</span>
+                            <span className="text-[10px] block" style={{ color: 'var(--text-muted)' }}>
+                              {member.Role_Name} {member.Department_Name ? `· ${member.Department_Name}` : ''}
+                            </span>
+
+                            {member.Remarks ? (
+                              <div className="mt-2.5 p-2.5 rounded-xl bg-slate-900 border animate-none" style={{ borderColor: 'var(--border-subtle)' }}>
+                                <span className="text-[9px] font-bold uppercase block text-slate-500 mb-0.5">Field Findings</span>
+                                <p className="text-xs leading-relaxed italic text-slate-300">"{member.Remarks}"</p>
+                              </div>
+                            ) : (
+                              <span className="inline-block mt-2 text-[10px] font-bold text-amber-400">
+                                ⏳ Awaiting field remarks
+                              </span>
+                            )}
+                          </div>
+
+                          {member.Submitted_At && (
+                            <span className="text-[10px] font-mono text-slate-500 shrink-0 self-end md:self-start">
+                              Submitted: {new Date(member.Submitted_At).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Display static CAPA observations if logged in the past */}
-            {capaData && (
-              <div 
+            {capaData && showCapaSummary && (
+              <div
                 className="reveal-panel p-6 rounded-3xl space-y-4"
                 style={{
                   background: 'var(--bg-surface)',
@@ -693,8 +1114,8 @@ function ComplaintDetail() {
             )}
 
             {/* Display Settlement details if logged */}
-            {settlement && (
-              <div 
+            {settlement && showSettlementSummary && (
+              <div
                 className="reveal-panel p-6 rounded-3xl space-y-4 border"
                 style={{
                   background: 'var(--bg-surface)',
@@ -706,7 +1127,7 @@ function ComplaintDetail() {
                   <ShieldCheck className="w-5 h-5" />
                   <h3 className="text-sm font-bold uppercase tracking-wider">Settlement & Commercial Payout</h3>
                 </div>
-                
+
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-semibold">
                   <div>
                     <span className="block text-[9px] uppercase font-bold" style={{ color: 'var(--text-muted)' }}>Proposed Settlement</span>
@@ -729,8 +1150,8 @@ function ComplaintDetail() {
             )}
 
             {/* Display SAP Credit Note details if sync is done */}
-            {creditNote && (
-              <div 
+            {creditNote && showCreditNoteSummary && (
+              <div
                 className="reveal-panel p-6 rounded-3xl space-y-4 border"
                 style={{
                   background: 'var(--bg-surface)',
@@ -761,21 +1182,20 @@ function ComplaintDetail() {
                     <span className="inline-block px-2.5 py-0.5 rounded-full font-bold text-[10px] mt-0.5" style={{ background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--border-subtle)' }}>Posted</span>
                   </div>
                 </div>
-                
+
                 <div className="text-[10px] border-t pt-3" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}>
                   <span className="font-bold">Sync Log: </span>
                   <span className="italic">{creditNote.SAP_Response_Message}</span>
                 </div>
               </div>
             )}
-
           </div>
 
           {/* Right panel: Meta claims details & Review sheets */}
           <div className="lg:col-span-4 space-y-6">
-            
+
             {/* Claims Metadata Card */}
-            <div 
+            <div
               className="reveal-panel p-6 rounded-3xl space-y-5"
               style={{
                 background: 'var(--bg-surface)',
@@ -784,7 +1204,7 @@ function ComplaintDetail() {
               }}
             >
               <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Claim Information</h3>
-              
+
               <div className="space-y-4 text-sm font-semibold">
                 <div className="flex items-center space-x-2.5">
                   <Building className="w-4 h-4 text-slate-500" />
@@ -800,7 +1220,19 @@ function ComplaintDetail() {
                   <div>
                     <span className="block text-xs font-normal" style={{ color: 'var(--text-muted)' }}>Key Account Manager (KAM)</span>
                     <span style={{ color: 'var(--text-primary)' }}>{complaint.KAM_Name || 'General Queue'}</span>
-                    <span className="text-xs block font-normal" style={{ color: 'var(--text-secondary)' }}>Assignee: {complaint.Assignee || 'Unassigned'}</span>
+                    <span className="text-xs block font-normal" style={{ color: 'var(--text-secondary)' }}>
+                      Assignee: {
+                        complaint.Assignee ? (
+                          complaint.Designation && !complaint.Assignee.includes(`(${complaint.Designation})`) && !complaint.Assignee.includes(complaint.Designation) ? (
+                            `${complaint.Assignee} (${complaint.Designation})`
+                          ) : (
+                            complaint.Assignee
+                          )
+                        ) : (
+                          'Unassigned'
+                        )
+                      }
+                    </span>
                   </div>
                 </div>
 
@@ -817,9 +1249,9 @@ function ComplaintDetail() {
                   <div>
                     <span className="block text-xs font-normal" style={{ color: 'var(--text-muted)' }}>SLA Due Date</span>
                     <span className="font-mono" style={{ color: complaint.Is_Overdue === 1 ? '#f87171' : 'var(--text-secondary)' }}>
-                      {new Date(complaint.SLA_Due_Date).toLocaleString('en-IN')}
+                      {complaint.SLA_Due_Date ? new Date(complaint.SLA_Due_Date).toLocaleString('en-IN') : 'N/A'}
                     </span>
-                    
+
                     <div className="flex flex-wrap gap-1.5 mt-1.5">
                       {complaint.Is_Overdue === 1 && (
                         <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[9px] font-bold" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: '#f87171' }}>
@@ -857,7 +1289,7 @@ function ComplaintDetail() {
 
             {/* Error Actions message box */}
             {actionError && (
-              <div 
+              <div
                 className="p-4 border rounded-2xl flex items-start space-x-3 text-xs"
                 style={{ background: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.25)', color: '#f87171' }}
               >
@@ -868,7 +1300,7 @@ function ComplaintDetail() {
 
             {/* KAM Action panel */}
             {canApproveKam && (
-              <div 
+              <div
                 className="reveal-panel p-6 rounded-3xl border space-y-4"
                 style={{
                   background: 'var(--bg-surface)',
@@ -892,7 +1324,9 @@ function ComplaintDetail() {
                       className="w-full px-3 py-2.5 rounded-xl text-xs outline-none font-semibold"
                     >
                       {priorities.map((p) => (
-                        <option key={p.Lookup_ID} value={p.Lookup_ID} className="text-slate-850 dark:text-white">{p.Lookup_Value}</option>
+                        <option key={p.Lookup_ID} value={p.Lookup_ID} className="text-slate-850 dark:text-white">
+                          {p.Lookup_Value === 'Critical' ? 'Critical (1 Day)' : p.Lookup_Value === 'High' ? 'High (3 Days)' : p.Lookup_Value === 'Medium' ? 'Medium (7 Days)' : p.Lookup_Value === 'Low' ? 'Low (14 Days)' : p.Lookup_Value}
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -925,7 +1359,7 @@ function ComplaintDetail() {
 
             {/* TS Action panel */}
             {canEditTs && (
-              <div 
+              <div
                 className="reveal-panel p-6 rounded-3xl border space-y-4"
                 style={{
                   background: 'var(--bg-surface)',
@@ -939,6 +1373,21 @@ function ComplaintDetail() {
                 </div>
 
                 <form onSubmit={handleTsSubmit} className="space-y-4">
+
+                  {/* 24h lock warning */}
+                  {(() => {
+                    const visit = tsData?.visits?.[0];
+                    if (visit?.Hours_Since_Scheduled > 24 && visit?.Visit_Status_ID === 51) {
+                      return (
+                        <div className="flex items-start space-x-2 px-3 py-2.5 rounded-xl text-xs font-semibold" style={{ background: 'rgba(239,68,68,0.12)', color: '#f87171', border: '1px solid rgba(239,68,68,0.25)' }}>
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                          <span>The 24-hour edit window has passed. Visit schedule is locked.</span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Review Action</label>
                     <select
@@ -948,64 +1397,124 @@ function ComplaintDetail() {
                       className="w-full px-3 py-2.5 rounded-xl text-xs outline-none"
                     >
                       <option value="forward" className="text-slate-850 dark:text-white">Forward to QC</option>
-                      <option value="clarify" className="text-slate-850 dark:text-white">Request Clarification</option>
-                      <option value="visit-schedule" className="text-slate-850 dark:text-white">Schedule Customer Visit</option>
-                      <option value="visit-complete" className="text-slate-850 dark:text-white">Complete Customer Visit</option>
+                      {['TS Head', 'Administrator'].includes(user.role) && (
+                        <>
+                          <option value="visit-schedule" className="text-slate-850 dark:text-white">Schedule Customer Visit</option>
+                          <option value="close" className="text-slate-850 dark:text-white">Close Complaint</option>
+                        </>
+                      )}
                     </select>
                   </div>
 
-                  {tsAction === 'visit-schedule' && (
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Visit Date</label>
-                      <input
-                        type="datetime-local"
-                        required
-                        value={tsVisitDate}
-                        onChange={(e) => setTsVisitDate(e.target.value)}
-                        style={fieldStyle}
-                        className="w-full px-3 py-2.5 rounded-xl text-xs outline-none"
-                      />
-                    </div>
-                  )}
+                  {/* Visit Scheduling — TS Head / Admin only */}
+                  {tsAction === 'visit-schedule' && ['TS Head', 'Administrator'].includes(user.role) && (() => {
+                    const existingVisit = tsData?.visits?.[0];
+                    const isLocked = existingVisit?.Hours_Since_Scheduled > 24 && existingVisit?.Visit_Status_ID === 51;
+                    return (
+                      <div className="space-y-4 pt-3 mt-1 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
 
-                  {tsAction === 'visit-complete' && (
-                    <div className="space-y-3 pt-2 mt-2 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Visit Findings</label>
-                        <textarea
-                          rows="2"
-                          required
-                          value={tsFindings}
-                          onChange={(e) => setTsFindings(e.target.value)}
-                          style={fieldStyle}
-                          className="w-full px-3 py-2 rounded-xl text-xs outline-none"
-                          placeholder="Describe onsite observations..."
-                        />
+                        {/* Visit Required checkbox */}
+                        <div className="flex items-center justify-between px-3 py-2.5 rounded-xl" style={{ background: 'var(--bg-surface-2)', border: '1px solid var(--border-subtle)' }}>
+                          <label htmlFor="tsVisit" className="text-xs font-semibold cursor-pointer" style={{ color: 'var(--text-secondary)' }}>Visit Required</label>
+                          <input
+                            type="checkbox"
+                            id="tsVisit"
+                            checked={tsVisitReq}
+                            onChange={(e) => setTsVisitReq(e.target.checked)}
+                            disabled={isLocked}
+                            className="w-4 h-4 rounded cursor-pointer"
+                          />
+                        </div>
+
+                        {tsVisitReq && (
+                          <>
+                            {/* Number of members */}
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Number of Visit Members</label>
+                              <div className="flex space-x-2">
+                                {[1, 2, 3].map(n => (
+                                  <button
+                                    key={n}
+                                    type="button"
+                                    disabled={isLocked}
+                                    onClick={() => setTsVisitMemberCount(n)}
+                                    className="flex-1 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                                    style={{
+                                      background: tsVisitMemberCount === n ? 'var(--accent)' : 'var(--bg-surface-2)',
+                                      color: tsVisitMemberCount === n ? '#fff' : 'var(--text-muted)',
+                                      border: `1px solid ${tsVisitMemberCount === n ? 'var(--accent)' : 'var(--border-subtle)'}`
+                                    }}
+                                  >
+                                    {n} {n === 1 ? 'Member' : 'Members'}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Per-member employee selectors */}
+                            <div className="space-y-2">
+                              <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Visit Team Members</label>
+                              {Array.from({ length: tsVisitMemberCount }).map((_, idx) => (
+                                <div key={idx} className="flex items-center space-x-2">
+                                  <span className="text-[10px] font-bold w-4 shrink-0" style={{ color: 'var(--text-muted)' }}>{idx + 1}.</span>
+                                  <select
+                                    required
+                                    disabled={isLocked}
+                                    value={tsVisitMembers[idx] || ''}
+                                    onChange={(e) => {
+                                      const updated = [...tsVisitMembers];
+                                      updated[idx] = e.target.value;
+                                      setTsVisitMembers(updated);
+                                    }}
+                                    style={fieldStyle}
+                                    className="flex-1 px-3 py-2 rounded-xl text-xs outline-none"
+                                  >
+                                    <option value="" disabled className="text-slate-850 dark:text-white">-- Select Employee --</option>
+                                    {employees
+                                      .filter(emp => !['TS Head', 'QC Head', 'Operations Head', 'Marketing Head', 'Finance Head', 'Managing Director'].includes(emp.Role_Name))
+                                      .map(emp => (
+                                        <option key={emp.Employee_ID} value={emp.Employee_ID} className="text-slate-850 dark:text-white">
+                                          {emp.Employee_Name}{emp.Department_Name ? ` (${emp.Department_Name})` : ''}
+                                        </option>
+                                      ))}
+                                  </select>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Shared departure / return dates */}
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Departure Date</label>
+                                <input
+                                  type="datetime-local"
+                                  required
+                                  disabled={isLocked}
+                                  value={tsDepartureDate}
+                                  onChange={(e) => setTsDepartureDate(e.target.value)}
+                                  style={fieldStyle}
+                                  className="w-full px-3 py-2 rounded-xl text-xs outline-none"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Return Date</label>
+                                <input
+                                  type="datetime-local"
+                                  required
+                                  disabled={isLocked}
+                                  value={tsReturnDate}
+                                  onChange={(e) => setTsReturnDate(e.target.value)}
+                                  min={tsDepartureDate}
+                                  style={fieldStyle}
+                                  className="w-full px-3 py-2 rounded-xl text-xs outline-none"
+                                />
+                              </div>
+                            </div>
+                          </>
+                        )}
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Customer Feedback</label>
-                        <textarea
-                          rows="2"
-                          required
-                          value={tsFeedback}
-                          onChange={(e) => setTsFeedback(e.target.value)}
-                          style={fieldStyle}
-                          className="w-full px-3 py-2 rounded-xl text-xs outline-none"
-                          placeholder="Feedback from customer..."
-                        />
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="checkbox"
-                          id="tsFollowUp"
-                          checked={tsFollowUp}
-                          onChange={(e) => setTsFollowUp(e.target.checked)}
-                          className="w-4 h-4 rounded bg-[var(--bg-surface-2)] border-[var(--border-subtle)] text-[var(--accent)] focus:ring-[var(--accent)] cursor-pointer"
-                        />
-                        <label htmlFor="tsFollowUp" className="text-xs font-semibold cursor-pointer" style={{ color: 'var(--text-secondary)' }}>Follow-up Required</label>
-                      </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   <div className="space-y-3 pt-2 border-t animate-none" style={{ borderColor: 'var(--border-subtle)' }}>
                     <div className="space-y-1">
@@ -1032,28 +1541,9 @@ function ComplaintDetail() {
                       />
                     </div>
 
-                    <div className="space-y-1.5 flex flex-wrap gap-3 py-1">
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="checkbox"
-                          id="tsClarify"
-                          checked={tsClarifyReq}
-                          onChange={(e) => setTsClarifyReq(e.target.checked)}
-                          className="w-4 h-4 rounded bg-[var(--bg-surface-2)] border-[var(--border-subtle)] text-[var(--accent)] focus:ring-[var(--accent)] cursor-pointer"
-                        />
-                        <label htmlFor="tsClarify" className="text-[10px] font-bold uppercase cursor-pointer" style={{ color: 'var(--text-muted)' }}>Clarify Req.</label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="checkbox"
-                          id="tsSample"
-                          checked={tsSampleReq}
-                          onChange={(e) => setTsSampleReq(e.target.checked)}
-                          className="w-4 h-4 rounded bg-[var(--bg-surface-2)] border-[var(--border-subtle)] text-[var(--accent)] focus:ring-[var(--accent)] cursor-pointer"
-                        />
-                        <label htmlFor="tsSample" className="text-[10px] font-bold uppercase cursor-pointer" style={{ color: 'var(--text-muted)' }}>Sample Req.</label>
-                      </div>
-                      <div className="flex items-center space-x-2">
+                    {/* Only Visit Req checkbox — Clarify and Sample removed */}
+                    {tsAction !== 'visit-schedule' && (
+                      <div className="flex items-center space-x-2 py-1">
                         <input
                           type="checkbox"
                           id="tsVisit"
@@ -1063,7 +1553,7 @@ function ComplaintDetail() {
                         />
                         <label htmlFor="tsVisit" className="text-[10px] font-bold uppercase cursor-pointer" style={{ color: 'var(--text-muted)' }}>Visit Req.</label>
                       </div>
-                    </div>
+                    )}
 
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Remarks / Remarks Log</label>
@@ -1080,8 +1570,11 @@ function ComplaintDetail() {
 
                   <button
                     type="submit"
-                    disabled={submitting}
-                    className="w-full py-2.5 text-white rounded-xl font-bold flex items-center justify-center space-x-2 transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-0 text-xs btn-sheen cursor-pointer"
+                    disabled={submitting || (() => {
+                      const v = tsData?.visits?.[0];
+                      return tsAction === 'visit-schedule' && v?.Hours_Since_Scheduled > 24 && v?.Visit_Status_ID === 51;
+                    })()}
+                    className="w-full py-2.5 text-white rounded-xl font-bold flex items-center justify-center space-x-2 transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-0 text-xs btn-sheen cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ background: 'var(--accent)', boxShadow: '0 8px 20px var(--accent-soft)' }}
                   >
                     <span>Execute Transition</span>
@@ -1093,7 +1586,7 @@ function ComplaintDetail() {
 
             {/* QC Action panel */}
             {canEditQc && (
-              <div 
+              <div
                 className="reveal-panel p-6 rounded-3xl border space-y-4"
                 style={{
                   background: 'var(--bg-surface)',
@@ -1123,25 +1616,36 @@ function ComplaintDetail() {
 
                   {qcAction === 'sample-request' && (
                     <div className="space-y-3 pt-2 mt-2 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+                      {/* Contact person who will liaise with customer offline */}
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Sample Request Date</label>
-                        <input
-                          type="date"
-                          value={qcSampleReqDate}
-                          onChange={(e) => setQcSampleReqDate(e.target.value)}
+                        <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Contact Person <span className="normal-case text-[9px]">(will coordinate with customer)</span></label>
+                        <select
+                          required
+                          value={qcSampleContactEmployeeId}
+                          onChange={(e) => setQcSampleContactEmployeeId(e.target.value)}
                           style={fieldStyle}
                           className="w-full px-3 py-2 rounded-xl text-xs outline-none"
-                        />
+                        >
+                          <option value="" disabled className="text-slate-850 dark:text-white">-- Assign Contact Employee --</option>
+                          {employees
+                            .filter(emp => !['TS Head', 'QC Head', 'Operations Head', 'Marketing Head', 'Finance Head', 'Managing Director'].includes(emp.Role_Name))
+                            .map(emp => (
+                              <option key={emp.Employee_ID} value={emp.Employee_ID} className="text-slate-850 dark:text-white">
+                                {emp.Employee_Name}{emp.Department_Name ? ` (${emp.Department_Name})` : ''}
+                              </option>
+                            ))}
+                        </select>
+                        <p className="text-[9px] italic" style={{ color: 'var(--text-muted)' }}>The contact person will set sample dates after their offline conversation with the customer.</p>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Courier Details</label>
+                        <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Courier Details <span className="normal-case text-[9px]">(optional)</span></label>
                         <input
                           type="text"
                           value={qcCourierDetails}
                           onChange={(e) => setQcCourierDetails(e.target.value)}
                           style={fieldStyle}
                           className="w-full px-3 py-2 rounded-xl text-xs outline-none"
-                          placeholder="Courier tracking reference..."
+                          placeholder="Courier tracking reference (if known)..."
                         />
                       </div>
                     </div>
@@ -1186,6 +1690,88 @@ function ComplaintDetail() {
                   )}
 
                   <div className="space-y-3 pt-2 border-t animate-none" style={{ borderColor: 'var(--border-subtle)' }}>
+                    
+                    {/* Respond to Customer Images */}
+                    {data.attachments && data.attachments.length > 0 && (
+                      <div className="space-y-3 pb-2 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+                        <span className="text-[10px] font-bold uppercase block" style={{ color: 'var(--text-muted)' }}>Respond to Customer Images</span>
+                        {data.attachments.map((att, idx) => {
+                          const comment = qcImageComments[att.Attachment_ID] || '';
+                          const reply = qcImageReplies[att.Attachment_ID];
+
+                          return (
+                            <div key={att.Attachment_ID} className="p-3 rounded-2xl border space-y-2" style={{ background: 'var(--bg-surface-2)', borderColor: 'var(--border-subtle)' }}>
+                              <div className="flex items-center space-x-2">
+                                <img src={`http://localhost:5000/${att.File_Path}`} alt="" className="w-12 h-12 rounded-lg object-cover border" style={{ borderColor: 'var(--border-subtle)' }} />
+                                <div className="min-w-0 flex-1">
+                                  <span className="text-[10px] block font-bold truncate text-slate-300">{att.File_Name}</span>
+                                  <span className="text-[9px] block text-slate-500 italic truncate">{att.Remarks || 'No remarks'}</span>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold uppercase text-slate-400">Response Text</label>
+                                  <input
+                                    type="text"
+                                    value={comment}
+                                    onChange={(e) => {
+                                      setQcImageComments(prev => ({ ...prev, [att.Attachment_ID]: e.target.value }));
+                                    }}
+                                    className="w-full px-2 py-1.5 rounded-lg border text-xs bg-slate-900 text-white outline-none"
+                                    style={{ borderColor: 'var(--border-subtle)' }}
+                                    placeholder="Comment for this image..."
+                                  />
+                                </div>
+
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold uppercase text-slate-400 block">Reply Image</label>
+                                  {reply ? (
+                                    <div className="flex items-center justify-between p-1.5 bg-slate-800 rounded-lg text-[10px]">
+                                      <span className="truncate max-w-[120px] text-emerald-400 font-mono font-semibold">{reply.fileName}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setQcImageReplies(prev => {
+                                          const copy = { ...prev };
+                                          delete copy[att.Attachment_ID];
+                                          return copy;
+                                        })}
+                                        className="text-red-400 font-bold ml-1 hover:text-red-500 text-[10px] cursor-pointer"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={(e) => {
+                                        const file = e.target.files[0];
+                                        if (file) {
+                                          const reader = new FileReader();
+                                          reader.onloadend = () => {
+                                            setQcImageReplies(prev => ({
+                                              ...prev,
+                                              [att.Attachment_ID]: {
+                                                content: reader.result,
+                                                fileName: file.name
+                                              }
+                                            }));
+                                          };
+                                          reader.readAsDataURL(file);
+                                        }
+                                      }}
+                                      className="w-full text-[10px] text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[9px] file:font-bold file:bg-indigo-900 file:text-indigo-200 hover:file:bg-indigo-800 cursor-pointer"
+                                    />
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>QC Lab Observations</label>
                       <textarea
@@ -1249,7 +1835,7 @@ function ComplaintDetail() {
 
             {/* Operations CAPA Worksheet Panel */}
             {canEditCapa && (
-              <div 
+              <div
                 className="reveal-panel p-6 rounded-3xl border space-y-4"
                 style={{
                   background: 'var(--bg-surface)',
@@ -1358,7 +1944,7 @@ function ComplaintDetail() {
 
             {/* Stage Approvals Panel */}
             {(canApproveQcHead || canApproveOpsHead || canApproveMarketingPm || canApproveMarketingHead || canApproveMd || canApproveFinanceHead) && (
-              <div 
+              <div
                 className="reveal-panel p-6 rounded-3xl border space-y-4"
                 style={{
                   background: 'var(--bg-surface)',
@@ -1437,7 +2023,7 @@ function ComplaintDetail() {
               >
                 <div className="flex items-center space-x-2" style={{ color: 'var(--accent)' }}>
                   <TrendingUp className="w-5 h-5" />
-                  <h3 className="text-sm font-bold uppercase tracking-wider">Issue SAP Credit Note</h3>
+                  <h3 className="text-sm font-bold uppercase tracking-wider">Prepare SAP Credit Note</h3>
                 </div>
 
                 <form onSubmit={handleFinanceSubmit} className="space-y-4">
@@ -1524,16 +2110,78 @@ function ComplaintDetail() {
                     className="w-full py-3 text-white rounded-xl font-bold flex items-center justify-center space-x-2 transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-0 text-xs btn-sheen cursor-pointer animate-none"
                     style={{ background: 'var(--accent)', boxShadow: '0 8px 24px var(--accent-soft)' }}
                   >
-                    <span>Post CN and Close Complaint</span>
+                    <span>Prepare Credit Note and Forward</span>
                     <ShieldCheck className="w-4 h-4" />
                   </button>
                 </form>
               </div>
             )}
 
+            {/* Visit Member Remarks Submission Panel */}
+            {complaint.Complaint_Status_ID === 19 && tsData?.visitMembers?.some(m => String(m.Employee_ID) === String(user.id)) && (() => {
+              const userMemberRecord = tsData.visitMembers.find(m => String(m.Employee_ID) === String(user.id));
+              const hasSubmittedRemarks = !!userMemberRecord?.Submitted_At;
+              return (
+                <div
+                  className="reveal-panel p-6 rounded-3xl border space-y-4"
+                  style={{
+                    background: 'var(--bg-surface)',
+                    borderColor: 'var(--accent-soft)',
+                    boxShadow: '0 10px 30px var(--shadow-color)'
+                  }}
+                >
+                  <div className="flex items-center space-x-2" style={{ color: 'var(--accent)' }}>
+                    <ClipboardList className="w-5 h-5" />
+                    <h3 className="text-sm font-bold uppercase tracking-wider">Field Visit Report</h3>
+                  </div>
+
+                  {hasSubmittedRemarks ? (
+                    <div className="p-4 bg-emerald-500/10 border border-emerald-500/25 rounded-2xl space-y-2">
+                      <div className="flex items-center space-x-2 text-emerald-400 font-bold text-xs">
+                        <Check className="w-4 h-4" />
+                        <span>Remarks Submitted</span>
+                      </div>
+                      <p className="text-xs text-slate-300 italic">"{userMemberRecord.Remarks}"</p>
+                      <span className="text-[10px] block text-slate-500 font-mono">
+                        Submitted on: {new Date(userMemberRecord.Submitted_At).toLocaleString()}
+                      </span>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleMemberRemarksSubmit} className="space-y-4">
+                      <div className="p-3 bg-yellow-500/10 border border-yellow-500/25 rounded-2xl text-xs text-yellow-250">
+                        You are assigned as a visit member for this complaint. Please submit your observations and field findings below.
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Field Remarks / Findings</label>
+                        <textarea
+                          rows="4"
+                          required
+                          value={memberRemarks}
+                          onChange={(e) => setMemberRemarks(e.target.value)}
+                          style={fieldStyle}
+                          className="w-full px-3 py-2 rounded-xl text-xs outline-none"
+                          placeholder="Enter your detailed observations from the customer visit..."
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={submitting}
+                        className="w-full py-2.5 text-white rounded-xl font-bold flex items-center justify-center space-x-2 transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-0 text-xs btn-sheen cursor-pointer animate-none"
+                        style={{ background: 'var(--accent)', boxShadow: '0 8px 20px var(--accent-soft)' }}
+                      >
+                        <span>Submit Remarks</span>
+                        <Send className="w-3.5 h-3.5" />
+                      </button>
+                    </form>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Backwards Transition Panel (Rejections / Re-examinations) */}
             {canTakeTimelineAction && (
-              <div 
+              <div
                 className="reveal-panel p-6 rounded-3xl border space-y-4"
                 style={{
                   background: 'rgba(239, 68, 68, 0.05)',
@@ -1550,7 +2198,7 @@ function ComplaintDetail() {
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Action Type</label>
                     {complaint.Complaint_Status_ID === 17 ? (
-                      <div 
+                      <div
                         className="w-full px-3 py-2.5 rounded-xl text-xs font-semibold"
                         style={{ background: 'var(--bg-surface-2)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}
                       >
@@ -1598,7 +2246,7 @@ function ComplaintDetail() {
 
             {/* Reopen Complaint Control (Only for closed claims within 7 days) */}
             {canReopen && (
-              <div 
+              <div
                 className="reveal-panel p-6 rounded-3xl border space-y-4"
                 style={{
                   background: 'var(--bg-surface)',
@@ -1610,12 +2258,34 @@ function ComplaintDetail() {
                   <RotateCcw className="w-5 h-5" />
                   <h3 className="text-sm font-bold uppercase tracking-wider">Reopen Closed Complaint</h3>
                 </div>
-                
+
                 <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                   Orient Paper Mills CCMS guidelines permit reopening of a complaint within 7 days of closure if you believe the settlement was inadequate or requires revision.
                 </p>
 
                 <form onSubmit={handleReopenSubmit} className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Revert to Stage</label>
+                    <select
+                      value={reopenTargetStageId}
+                      onChange={(e) => setReopenTargetStageId(e.target.value)}
+                      style={fieldStyle}
+                      className="w-full px-3 py-2.5 rounded-xl text-xs outline-none"
+                    >
+                      <option value="1">Stage 1: KAM Verification</option>
+                      <option value="2">Stage 2: Technical Services Review (TS)</option>
+                      <option value="3">Stage 3: Quality Control Review (QC)</option>
+                      <option value="4">Stage 4: QC Head Verification</option>
+                      <option value="5">Stage 5: CAPA & Root Cause Analysis</option>
+                      <option value="6">Stage 6: Operations Head Approval</option>
+                      <option value="7">Stage 7: Marketing PM Review</option>
+                      <option value="8">Stage 8: Marketing Head Approval</option>
+                      <option value="9">Stage 9: MD Approval</option>
+                      <option value="10">Stage 10: Finance Credit Note Preparing</option>
+                      <option value="11">Stage 11: Finance Head Approval</option>
+                    </select>
+                  </div>
+
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Reopen Explanation Remarks</label>
                     <textarea
@@ -1645,7 +2315,7 @@ function ComplaintDetail() {
         </div>
 
         {/* 3. Timeline log */}
-        <div 
+        <div
           className="reveal-panel p-6 md:p-8 rounded-3xl space-y-6 animate-none"
           style={{
             background: 'var(--bg-surface)',
@@ -1654,12 +2324,12 @@ function ComplaintDetail() {
           }}
         >
           <h3 className="text-sm font-bold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>Workflow Timeline & Audit History</h3>
-          
+
           <div className="relative border-l pl-6 ml-4 space-y-8" style={{ borderColor: 'var(--border-subtle)' }}>
             {logs.map((log, idx) => (
               <div key={idx} className="relative group">
                 {/* Visual marker dot */}
-                <div 
+                <div
                   className="absolute -left-[35px] top-1 p-1 rounded-full border-2 transition-colors"
                   style={{
                     background: 'var(--bg-app)',
@@ -1669,34 +2339,107 @@ function ComplaintDetail() {
                   <div className="w-2.5 h-2.5 rounded-full" style={{ background: 'var(--accent)' }}></div>
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-2">
+                  {/* Row 1: Action Title and Date */}
                   <div className="flex flex-col sm:flex-row sm:justify-between items-start sm:items-center">
-                    <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{log.Action_Value || 'Workflow Stage Logged'}</span>
+                    <span className="text-sm font-bold" style={{ color: 'var(--accent)' }}>
+                      {log.Action_Value || 'Workflow Stage Logged'}
+                    </span>
                     <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>
                       {new Date(log.Action_Date).toLocaleString('en-IN')}
                     </span>
                   </div>
 
-                  <div className="flex items-center space-x-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                    <span className="font-semibold">{log.Employee_Name}</span>
-                    <span style={{ color: 'var(--border-subtle)' }}>•</span>
-                    <span>{log.Role_Name}</span>
-                    <span style={{ color: 'var(--border-subtle)' }}>•</span>
-                    <span>Dept: {log.Curr_Dept || 'TS'}</span>
-                  </div>
+                  {/* Row 2: Actor and Next Assignee Details (Approved By / Sent By & Sent To) */}
+                  {(() => {
+                    const parseLogRemarks = (remarks) => {
+                      if (!remarks) return { cleanRemarks: '', assignedTo: null, assignedName: null, assignedRole: null };
+                      // Lazy match: "Name" stops at the opening paren of "(Role)", handles nested parens correctly
+                      // Pattern: (Assigned to: Firstname Lastname (Role Name))
+                      const regex = /\s*\(Assigned to:\s*(.+?)\s*\(([^)]+)\)\s*\)/i;
+                      const match = remarks.match(regex);
+                      if (match) {
+                        const assignedName = match[1].trim();
+                        const assignedRole = match[2].trim();
+                        // Remove the full "(Assigned to: Name (Role))" block from remarks
+                        const cleanRemarks = remarks.replace(/\s*\(Assigned to:\s*.+?\s*\([^)]+\)\s*\)/gi, '').trim();
+                        return { cleanRemarks, assignedTo: `${assignedName} (${assignedRole})`, assignedName, assignedRole };
+                      }
+                      // Fallback: no role in parens — just "Name" without designation
+                      const regexFallback = /\s*\(Assigned to:\s*([^(]+?)\s*\)/i;
+                      const matchFallback = remarks.match(regexFallback);
+                      if (matchFallback) {
+                        const assignedTo = matchFallback[1].trim();
+                        const cleanRemarks = remarks.replace(regexFallback, '').trim();
+                        return { cleanRemarks, assignedTo, assignedName: assignedTo, assignedRole: null };
+                      }
+                      return { cleanRemarks: remarks, assignedTo: null, assignedName: null, assignedRole: null };
+                    };
 
-                  {log.Remarks && (
-                    <div 
-                      className="p-3.5 border rounded-xl text-xs italic leading-relaxed mt-2"
-                      style={{
-                        background: 'var(--bg-surface-2)',
-                        borderColor: 'var(--border-subtle)',
-                        color: 'var(--text-secondary)'
-                      }}
-                    >
-                      {log.Remarks}
-                    </div>
-                  )}
+                    const { cleanRemarks, assignedTo, assignedName, assignedRole } = parseLogRemarks(log.Remarks);
+                    
+                    const actionLower = (log.Action_Value || '').toLowerCase();
+                    const isApprovedAction = actionLower.includes('approved') || actionLower.includes('verify') || actionLower.includes('close');
+                    const isClosedAction = actionLower.includes('closed');
+                    const isClarifyAction = actionLower.includes('clarification') || actionLower.includes('reject') || actionLower.includes('return') || actionLower.includes('request');
+
+                    let actorLabel = 'Sent By';
+                    if (isApprovedAction) actorLabel = 'Approved By';
+                    else if (isClosedAction) actorLabel = 'Closed By';
+                    else if (isClarifyAction) actorLabel = 'Returned By';
+
+                    return (
+                      <>
+                        <div className="flex flex-col space-y-1.5 text-xs py-1" style={{ color: 'var(--text-secondary)' }}>
+                          {/* Sent By / Approved By row */}
+                          <div className="flex flex-wrap items-center gap-x-2">
+                            <span className="font-semibold text-slate-500 dark:text-slate-400 w-24 shrink-0">{actorLabel}:</span>
+                            <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+                              {log.Employee_Dept || log.Prev_Dept || 'N/A'} — {log.Employee_Name}
+                            </span>
+                            <span className="text-slate-400 font-normal">({log.Role_Name})</span>
+                          </div>
+
+                          {/* Sent To row — always show if dept changed, supplement with name from remarks */}
+                          {log.Curr_Dept && log.Curr_Dept !== log.Prev_Dept && (
+                            <div className="flex flex-wrap items-center gap-x-2">
+                              <span className="font-semibold text-slate-500 dark:text-slate-400 w-24 shrink-0">Sent To:</span>
+                              <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+                                {log.Curr_Dept}
+                                {assignedName ? ` — ${assignedName}` : ''}
+                              </span>
+                              {assignedRole && <span className="text-slate-400 font-normal">({assignedRole})</span>}
+                            </div>
+                          )}
+
+                          {/* Same-dept transition with assignee (e.g. visit member remarks, escalations) */}
+                          {assignedTo && log.Curr_Dept === log.Prev_Dept && (
+                            <div className="flex flex-wrap items-center gap-x-2">
+                              <span className="font-semibold text-slate-500 dark:text-slate-400 w-24 shrink-0">Sent To:</span>
+                              <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+                                {log.Curr_Dept} — {assignedName || assignedTo}
+                              </span>
+                              {assignedRole && <span className="text-slate-400 font-normal">({assignedRole})</span>}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Row 3: Remarks Box */}
+                        {cleanRemarks && (
+                          <div
+                            className="p-3 border rounded-xl text-xs italic leading-relaxed mt-1"
+                            style={{
+                              background: 'var(--bg-surface-2)',
+                              borderColor: 'var(--border-subtle)',
+                              color: 'var(--text-secondary)'
+                            }}
+                          >
+                            {cleanRemarks}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             ))}

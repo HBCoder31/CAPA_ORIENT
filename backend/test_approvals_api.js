@@ -11,6 +11,7 @@ async function runTests() {
   let pmToken = '';
   let mktHeadToken = '';
   let mdToken = '';
+  let adminToken = '';
 
   let complaintId1 = ''; // Claim <= 1 Lakh
   let complaintId2 = ''; // Claim > 1 Lakh
@@ -19,7 +20,7 @@ async function runTests() {
     // 1. Log in all roles
     console.log('Test 1: Authenticating all test roles...');
     
-    const [t1, t2, t3, t4, t5, t6, t7] = await Promise.all([
+    const [t1, t2, t3, t4, t5, t6, t7, tAdmin] = await Promise.all([
       axios.post(`${BASE_URL}/auth/login`, { email: 'paper.procurement@itc.in', password: 'customerpassword123' }),
       axios.post(`${BASE_URL}/auth/login`, { email: 'amit.sharma@orientpaper.com', password: 'password123' }),
       axios.post(`${BASE_URL}/auth/login`, { email: 'rajesh.gupta@orientpaper.com', password: 'password123' }),
@@ -27,6 +28,7 @@ async function runTests() {
       axios.post(`${BASE_URL}/auth/login`, { email: 'rohit.malhotra@orientpaper.com', password: 'password123' }),
       axios.post(`${BASE_URL}/auth/login`, { email: 'anjali.kapoor@orientpaper.com', password: 'password123' }),
       axios.post(`${BASE_URL}/auth/login`, { email: 'sanjay.bansal@orientpaper.com', password: 'password123' }),
+      axios.post(`${BASE_URL}/auth/login`, { email: 'admin@orientpaper.com', password: 'password123' }),
     ]);
 
     customerToken = t1.data.data.token;
@@ -36,6 +38,7 @@ async function runTests() {
     pmToken = t5.data.data.token;
     mktHeadToken = t6.data.data.token;
     mdToken = t7.data.data.token;
+    adminToken = tAdmin.data.data.token;
     
     console.log('✅ All roles authenticated successfully.');
 
@@ -135,7 +138,7 @@ async function runTests() {
     }, { headers: { Authorization: `Bearer ${mktHeadToken}` } });
 
     verifyRes = await axios.get(`${BASE_URL}/complaints/${complaintId1}`, {
-      headers: { Authorization: `Bearer ${mktHeadToken}` }
+      headers: { Authorization: `Bearer ${adminToken}` }
     });
     console.log(`   Verify Claim Status: ${verifyRes.data.data.complaint.Status} (Expected: Finance Pending)`);
     console.log(`   Verify Assignee: ${verifyRes.data.data.complaint.Assignee} (Expected: Deepak Sinha)`);
@@ -175,7 +178,7 @@ async function runTests() {
     }, { headers: { Authorization: `Bearer ${mdToken}` } });
 
     verifyRes = await axios.get(`${BASE_URL}/complaints/${complaintId2}`, {
-      headers: { Authorization: `Bearer ${mdToken}` }
+      headers: { Authorization: `Bearer ${adminToken}` }
     });
     console.log(`   Verify Claim Status: ${verifyRes.data.data.complaint.Status} (Expected: Finance Pending)`);
     console.log(`   Verify Assignee: ${verifyRes.data.data.complaint.Assignee} (Expected: Deepak Sinha)`);
@@ -195,7 +198,7 @@ async function runTests() {
     }, { headers: { Authorization: `Bearer ${finToken}` } });
 
     verifyRes = await axios.get(`${BASE_URL}/complaints/${complaintId1}`, {
-      headers: { Authorization: `Bearer ${mktHeadToken}` }
+      headers: { Authorization: `Bearer ${adminToken}` }
     });
     console.log(`   Verify Claim Status after Rejection: ${verifyRes.data.data.complaint.Status} (Expected: Marketing Head Approval)`);
     console.log(`   Verify Assignee after Rejection: ${verifyRes.data.data.complaint.Assignee} (Expected: Anjali Kapoor)`);
