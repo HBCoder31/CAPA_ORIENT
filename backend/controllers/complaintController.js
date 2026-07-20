@@ -1231,15 +1231,22 @@ async function submitTsReview(req, res, next) {
     }
 
     // 2. Save or update Technical_Service_Details (no Clarification/Sample columns)
-    const [existing] = await connection.execute('SELECT TS_Details_ID FROM Technical_Service_Details WHERE Complaint_ID = ?', [id]);
-    if (existing.length > 0) {
+    const [existingTsDetails] = await connection.execute(
+      'SELECT TS_Details_ID, Visit_Required FROM Technical_Service_Details WHERE Complaint_ID = ?',
+      [id]
+    );
+    const effectiveVisitRequired = actionType === 'visit-request' || actionType === 'visit-schedule'
+      ? true
+      : Boolean(visitRequired);
+
+    if (existingTsDetails.length > 0) {
       await connection.execute(
         `UPDATE Technical_Service_Details 
          SET Assigned_Engineer_ID = ?, Investigation_Date = NOW(), Technical_Observation = ?, 
              Visit_Required = ?, Recommended_Action = ?, Can_Close_Complaint = ?, 
              Remarks = ?, Updated_On = NOW(), Updated_By = ?
          WHERE Complaint_ID = ?`,
-        [req.user.id, observation || '', visitRequired ? 1 : 0, recommendedAction || '', canCloseComplaint ? 1 : 0, remarks || '', req.user.id, id]
+        [req.user.id, observation || '', effectiveVisitRequired ? 1 : 0, recommendedAction || '', canCloseComplaint ? 1 : 0, remarks || '', req.user.id, id]
       );
     } else {
       await connection.execute(
@@ -1247,7 +1254,7 @@ async function submitTsReview(req, res, next) {
            Complaint_ID, Assigned_Engineer_ID, Investigation_Date, Technical_Observation, 
            Visit_Required, Recommended_Action, Can_Close_Complaint, Remarks, Created_On, Created_By
          ) VALUES (?, ?, NOW(), ?, ?, ?, ?, ?, NOW(), ?)`,
-        [id, req.user.id, observation || '', visitRequired ? 1 : 0, recommendedAction || '', canCloseComplaint ? 1 : 0, remarks || '', req.user.id]
+        [id, req.user.id, observation || '', effectiveVisitRequired ? 1 : 0, recommendedAction || '', canCloseComplaint ? 1 : 0, remarks || '', req.user.id]
       );
     }
 
@@ -1258,7 +1265,19 @@ async function submitTsReview(req, res, next) {
     let actionTypeLookupId = 76; // Default 'Forwarded'
     let logRemarks = '';
 
-    if (actionType === 'visit-schedule') {
+    if (actionType === 'visit-request') {
+      if (!['TS Engineer', 'TS Head', 'Administrator'].includes(req.user.role)) {
+        await connection.rollback();
+        return sendError(res, 'Only Technical Service users can request a visit.', 403);
+      }
+
+      actionTypeLookupId = 75; // Assigned / requested
+      nextStatusId = header.Complaint_Status_ID;
+      nextDeptId = header.Current_Department_ID;
+      nextAssigneeId = req.user.id;
+      logRemarks = `TS visit requested by ${req.user.role}. Awaiting TS Head scheduling. Remarks: ${remarks || ''}`;
+
+    } else if (actionType === 'visit-schedule') {
       // Authorization: only TS Head or Admin may schedule
       if (!['TS Head', 'Administrator'].includes(req.user.role)) {
         await connection.rollback();
@@ -1345,6 +1364,24 @@ async function submitTsReview(req, res, next) {
       );
 
     } else if (actionType === 'forward') {
+      // Prevent forwarding to QC while a customer visit is requested or still in progress.
+      const [latestVisitRows] = await connection.execute(
+        'SELECT Visit_Status_ID FROM Visit_Details WHERE Complaint_ID = ? ORDER BY Visit_Date DESC LIMIT 1',
+        [id]
+      );
+      const openVisit = latestVisitRows.length > 0 && latestVisitRows[0].Visit_Status_ID === 51;
+      const [completedVisitRows] = await connection.execute(
+        'SELECT COUNT(*) AS completedCount FROM Visit_Details WHERE Complaint_ID = ? AND Visit_Status_ID = 52',
+        [id]
+      );
+      const visitCompleted = completedVisitRows[0]?.completedCount > 0;
+      const previouslyRequestedVisit = existingTsDetails.length > 0 && existingTsDetails[0].Visit_Required === 1;
+
+      if (openVisit || (previouslyRequestedVisit && !visitCompleted)) {
+        await connection.rollback();
+        return sendError(res, 'Cannot forward to QC until the requested customer visit is scheduled and completed.', 400);
+      }
+
       actionTypeLookupId = 76; // Forwarded
       const next = await resolveNextStage(connection, 2, buId, header.Customer_ID);
       nextStatusId = next.statusId;

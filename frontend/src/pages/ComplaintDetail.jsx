@@ -279,6 +279,10 @@ function ComplaintDetail() {
         remarks: tsRemarks,
       };
 
+      if (tsAction === 'visit-request' || tsAction === 'visit-schedule') {
+        payload.visitRequired = true;
+      }
+
       if (tsAction === 'visit-schedule') {
         const selectedMembers = tsVisitMembers.slice(0, tsVisitMemberCount).filter(Boolean);
         payload.visitMembers = selectedMembers;
@@ -1409,11 +1413,20 @@ function ComplaintDetail() {
                     <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Review Action</label>
                     <select
                       value={tsAction}
-                      onChange={(e) => setTsAction(e.target.value)}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setTsAction(value);
+                        if (value === 'visit-schedule') {
+                          setTsVisitReq(true);
+                        }
+                      }}
                       style={fieldStyle}
                       className="w-full px-3 py-2.5 rounded-xl text-xs outline-none"
                     >
                       <option value="forward" className="text-slate-700 dark:text-white">Forward to QC</option>
+                      {user.role === 'TS Engineer' && (
+                        <option value="visit-request" className="text-slate-700 dark:text-white">Request Customer Visit</option>
+                      )}
                       {['TS Head', 'Administrator'].includes(user.role) && (
                         <>
                           <option value="visit-schedule" className="text-slate-700 dark:text-white">Schedule Customer Visit</option>
@@ -1422,6 +1435,13 @@ function ComplaintDetail() {
                       )}
                     </select>
                   </div>
+
+                  {tsAction === 'visit-request' && user.role === 'TS Engineer' && (
+                    <div className="rounded-3xl p-4 bg-slate-950/60 border border-slate-800 text-sm text-slate-200">
+                      <p className="font-semibold">Visit request submitted.</p>
+                      <p>TS Head will confirm and schedule the visit, including employees and dates. This action only requests the visit; scheduling is handled separately.</p>
+                    </div>
+                  )}
 
                   {/* Visit Scheduling — TS Head / Admin only */}
                   {tsAction === 'visit-schedule' && ['TS Head', 'Administrator'].includes(user.role) && (() => {
