@@ -297,18 +297,29 @@ async function resolveNextStage(connection, currentStageNumber, businessUnitId, 
  */
 async function getCustomers(req, res, next) {
   try {
-    // Only employees can view all customers
+    // Only employees can view customers
     if (req.user.role === 'Customer') {
       return sendError(res, 'Access denied. Customers cannot search other customers.', 403);
     }
-    const [rows] = await pool.execute(`
+
+    let query = `
       SELECT c.Customer_ID, c.Customer_Name, c.City, c.State, c.KAM_ID, e.Employee_Name as KAM_Name 
       FROM Customer_Master c
       LEFT JOIN KAM_Master k ON c.KAM_ID = k.KAM_ID
       LEFT JOIN Employee_Master e ON k.Employee_ID = e.Employee_ID
-      WHERE c.Is_Active = TRUE 
-      ORDER BY c.Customer_Name
-    `);
+      WHERE c.Is_Active = TRUE
+    `;
+    const params = [];
+
+    // Scope KAM role: only show customers assigned to this KAM
+    if (req.user.role === 'KAM') {
+      query += ` AND k.Employee_ID = ?`;
+      params.push(req.user.id);
+    }
+
+    query += ` ORDER BY c.Customer_Name`;
+
+    const [rows] = await pool.execute(query, params);
     return sendSuccess(res, rows, 'Customers retrieved successfully.');
   } catch (err) {
     next(err);
@@ -1079,7 +1090,7 @@ async function getDashboardStats(req, res, next) {
 
     // 5. Avg Resolution Time (for closed complaints, in days)
     const [avgResRows] = await pool.execute(
-      `SELECT AVG(TIMESTAMPDIFF(HOUR, c.Created_On, c.Closure_Date)) / 24 as avgDays
+      `SELECT AVG(TIMESTAMPDIFF(HOUR, c.Complaint_Date, c.Closure_Date)) / 24 as avgDays
        FROM Complaint_Header c
        WHERE ${whereClause} AND c.Closure_Date IS NOT NULL`,
       params

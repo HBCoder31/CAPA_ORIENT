@@ -410,7 +410,7 @@ function Account() {
                   </div>
                 )}
 
-                <form onSubmit={handlePasswordSubmit} className="space-y-4">
+                <form onSubmit={handlePasswordSubmit} className="space-y-4" autoComplete="off">
                   <PasswordField
                     label="Current Password"
                     value={currentPassword}
@@ -419,6 +419,7 @@ function Account() {
                     onToggle={() => setShowCurrent(v => !v)}
                     fieldStyle={fieldStyle}
                     placeholder="Enter current password"
+                    autoComplete="current-password"
                   />
                   <PasswordField
                     label="New Password"
@@ -428,6 +429,7 @@ function Account() {
                     onToggle={() => setShowNew(v => !v)}
                     fieldStyle={fieldStyle}
                     placeholder="Min 6 characters"
+                    autoComplete="new-password"
                   />
                   <PasswordField
                     label="Confirm New Password"
@@ -437,6 +439,7 @@ function Account() {
                     onToggle={() => setShowConfirm(v => !v)}
                     fieldStyle={fieldStyle}
                     placeholder="Repeat new password"
+                    autoComplete="new-password"
                   />
 
                   {/* Password strength indicator */}
@@ -740,7 +743,7 @@ function ProfileField({ icon, label, value, mono = false }) {
   );
 }
 
-function PasswordField({ label, value, onChange, show, onToggle, fieldStyle, placeholder }) {
+function PasswordField({ label, value, onChange, show, onToggle, fieldStyle, placeholder, autoComplete }) {
   return (
     <div className="space-y-1">
       <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>{label}</label>
@@ -753,6 +756,7 @@ function PasswordField({ label, value, onChange, show, onToggle, fieldStyle, pla
           style={fieldStyle}
           className="w-full px-3 py-2.5 pr-10 rounded-xl text-xs outline-none transition-all"
           placeholder={placeholder}
+          autoComplete={autoComplete || 'off'}
         />
         <button type="button" onClick={onToggle}
           className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer transition-colors"
