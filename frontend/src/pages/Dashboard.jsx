@@ -674,7 +674,7 @@ function Dashboard() {
                     type="date"
                     value={filterDateFrom}
                     onChange={(e) => setFilterDateFrom(e.target.value)}
-                    className="w-full px-2 py-1.5 rounded-lg border outline-none text-slate-805 dark:text-white bg-white dark:bg-slate-900"
+                    className="w-full px-2 py-1.5 rounded-lg border outline-none text-slate-800 dark:text-white bg-white dark:bg-slate-900"
                     style={{ borderColor: 'var(--border-subtle)' }}
                   />
                 </div>
@@ -686,7 +686,7 @@ function Dashboard() {
                     type="date"
                     value={filterDateTo}
                     onChange={(e) => setFilterDateTo(e.target.value)}
-                    className="w-full px-2 py-1.5 rounded-lg border outline-none text-slate-805 dark:text-white bg-white dark:bg-slate-900"
+                    className="w-full px-2 py-1.5 rounded-lg border outline-none text-slate-800 dark:text-white bg-white dark:bg-slate-900"
                     style={{ borderColor: 'var(--border-subtle)' }}
                   />
                 </div>
@@ -698,7 +698,7 @@ function Dashboard() {
                     type="date"
                     value={filterSlaFrom}
                     onChange={(e) => setFilterSlaFrom(e.target.value)}
-                    className="w-full px-2 py-1.5 rounded-lg border outline-none text-slate-805 dark:text-white bg-white dark:bg-slate-900"
+                    className="w-full px-2 py-1.5 rounded-lg border outline-none text-slate-800 dark:text-white bg-white dark:bg-slate-900"
                     style={{ borderColor: 'var(--border-subtle)' }}
                   />
                 </div>
@@ -710,7 +710,7 @@ function Dashboard() {
                     type="date"
                     value={filterSlaTo}
                     onChange={(e) => setFilterSlaTo(e.target.value)}
-                    className="w-full px-2 py-1.5 rounded-lg border outline-none text-slate-8-5 dark:text-white bg-white dark:bg-slate-900"
+                    className="w-full px-2 py-1.5 rounded-lg border outline-none text-slate-800 dark:text-white bg-white dark:bg-slate-900"
                     style={{ borderColor: 'var(--border-subtle)' }}
                   />
                 </div>
@@ -862,3 +862,4 @@ function Dashboard() {
 }
 
 export default Dashboard;
+

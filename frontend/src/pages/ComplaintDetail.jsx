@@ -1324,7 +1324,7 @@ function ComplaintDetail() {
                       className="w-full px-3 py-2.5 rounded-xl text-xs outline-none font-semibold"
                     >
                       {priorities.map((p) => (
-                        <option key={p.Lookup_ID} value={p.Lookup_ID} className="text-slate-850 dark:text-white">
+                        <option key={p.Lookup_ID} value={p.Lookup_ID} className="text-slate-700 dark:text-white">
                           {p.Lookup_Value === 'Critical' ? 'Critical (1 Day)' : p.Lookup_Value === 'High' ? 'High (3 Days)' : p.Lookup_Value === 'Medium' ? 'Medium (7 Days)' : p.Lookup_Value === 'Low' ? 'Low (14 Days)' : p.Lookup_Value}
                         </option>
                       ))}
@@ -1396,11 +1396,11 @@ function ComplaintDetail() {
                       style={fieldStyle}
                       className="w-full px-3 py-2.5 rounded-xl text-xs outline-none"
                     >
-                      <option value="forward" className="text-slate-850 dark:text-white">Forward to QC</option>
+                      <option value="forward" className="text-slate-700 dark:text-white">Forward to QC</option>
                       {['TS Head', 'Administrator'].includes(user.role) && (
                         <>
-                          <option value="visit-schedule" className="text-slate-850 dark:text-white">Schedule Customer Visit</option>
-                          <option value="close" className="text-slate-850 dark:text-white">Close Complaint</option>
+                          <option value="visit-schedule" className="text-slate-700 dark:text-white">Schedule Customer Visit</option>
+                          <option value="close" className="text-slate-700 dark:text-white">Close Complaint</option>
                         </>
                       )}
                     </select>
@@ -1469,11 +1469,11 @@ function ComplaintDetail() {
                                     style={fieldStyle}
                                     className="flex-1 px-3 py-2 rounded-xl text-xs outline-none"
                                   >
-                                    <option value="" disabled className="text-slate-850 dark:text-white">-- Select Employee --</option>
+                                    <option value="" disabled className="text-slate-700 dark:text-white">-- Select Employee --</option>
                                     {employees
                                       .filter(emp => !['TS Head', 'QC Head', 'Operations Head', 'Marketing Head', 'Finance Head', 'Managing Director'].includes(emp.Role_Name))
                                       .map(emp => (
-                                        <option key={emp.Employee_ID} value={emp.Employee_ID} className="text-slate-850 dark:text-white">
+                                        <option key={emp.Employee_ID} value={emp.Employee_ID} className="text-slate-700 dark:text-white">
                                           {emp.Employee_Name}{emp.Department_Name ? ` (${emp.Department_Name})` : ''}
                                         </option>
                                       ))}
@@ -1608,9 +1608,9 @@ function ComplaintDetail() {
                       style={fieldStyle}
                       className="w-full px-3 py-2.5 rounded-xl text-xs outline-none"
                     >
-                      <option value="forward" className="text-slate-850 dark:text-white">Forward to Operations (CAPA)</option>
-                      <option value="sample-request" className="text-slate-850 dark:text-white">Request Physical Sample</option>
-                      <option value="sample-receive" className="text-slate-850 dark:text-white">Log Received Sample</option>
+                      <option value="forward" className="text-slate-700 dark:text-white">Forward to Operations (CAPA)</option>
+                      <option value="sample-request" className="text-slate-700 dark:text-white">Request Physical Sample</option>
+                      <option value="sample-receive" className="text-slate-700 dark:text-white">Log Received Sample</option>
                     </select>
                   </div>
 
@@ -1626,11 +1626,11 @@ function ComplaintDetail() {
                           style={fieldStyle}
                           className="w-full px-3 py-2 rounded-xl text-xs outline-none"
                         >
-                          <option value="" disabled className="text-slate-850 dark:text-white">-- Assign Contact Employee --</option>
+                          <option value="" disabled className="text-slate-700 dark:text-white">-- Assign Contact Employee --</option>
                           {employees
                             .filter(emp => !['TS Head', 'QC Head', 'Operations Head', 'Marketing Head', 'Finance Head', 'Managing Director'].includes(emp.Role_Name))
                             .map(emp => (
-                              <option key={emp.Employee_ID} value={emp.Employee_ID} className="text-slate-850 dark:text-white">
+                              <option key={emp.Employee_ID} value={emp.Employee_ID} className="text-slate-700 dark:text-white">
                                 {emp.Employee_Name}{emp.Department_Name ? ` (${emp.Department_Name})` : ''}
                               </option>
                             ))}
@@ -1898,9 +1898,9 @@ function ComplaintDetail() {
                         style={fieldStyle}
                         className="w-full px-3 py-2 rounded-xl text-[10px] outline-none"
                       >
-                        <option value="" className="text-slate-850 dark:text-white">-- Choose Employee --</option>
+                        <option value="" className="text-slate-700 dark:text-white">-- Choose Employee --</option>
                         {employees.map(emp => (
-                          <option key={emp.Employee_ID} value={emp.Employee_ID} className="text-slate-850 dark:text-white">{emp.Employee_Name}</option>
+                          <option key={emp.Employee_ID} value={emp.Employee_ID} className="text-slate-700 dark:text-white">{emp.Employee_Name}</option>
                         ))}
                       </select>
                     </div>
@@ -2211,10 +2211,10 @@ function ComplaintDetail() {
                         style={fieldStyle}
                         className="w-full px-3 py-2.5 rounded-xl text-xs outline-none"
                       >
-                        <option value="reject" className="text-slate-850 dark:text-white">Reject Claim (Closed)</option>
-                        <option value="review-request" className="text-slate-850 dark:text-white">Request Re-examination (Flag without hard rejection)</option>
+                        <option value="reject" className="text-slate-700 dark:text-white">Reject Claim (Closed)</option>
+                        <option value="review-request" className="text-slate-700 dark:text-white">Request Re-examination (Flag without hard rejection)</option>
                         {!canEditTs && (
-                          <option value="clarify" className="text-slate-850 dark:text-white">Seek Clarifications (Offline request)</option>
+                          <option value="clarify" className="text-slate-700 dark:text-white">Seek Clarifications (Offline request)</option>
                         )}
                       </select>
                     )}
@@ -2452,3 +2452,4 @@ function ComplaintDetail() {
 }
 
 export default ComplaintDetail;
+
