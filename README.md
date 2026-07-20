@@ -1,120 +1,41 @@
-# CCMS
-## Customer Complaint Management System — Orient Paper & Mill
-### Complaint Transaction + Mock SAP S/4HANA Sync · `backend/` + `frontend/`
+# Customer Complaint Management System (CCMS)
+### Orient Paper & Mill — Complaint Transaction & Workflow Portal
+
+A full-stack enterprise portal for managing customer quality complaints across paper and chemical business units. The system features a dynamic role-based 11-stage workflow lifecycle, customer assignment routing, sample tracking, customer visit logging, CAPA documentation, settlement processing, and complete data visibility controls.
 
 ---
 
-## What This System Does
+## Tech Stack & Architecture
 
-This is the complete backend and frontend portal for the Orient Paper & Mill CCMS. It covers:
+### Backend
+* **Runtime**: Node.js (v18+)
+* **Framework**: Express.js
+* **Database**: MySQL Server (via `mysql2/promise` pool)
+* **Authentication**: JWT stored in HTTP-Only Cookies & Bearer Headers (`jsonwebtoken`, `cookie-parser`)
+* **Security & Utility**: `bcryptjs` password hashing, `helmet` security headers, `express-rate-limit`, `joi` request validation, `multer` file upload processing
 
-> **Documentation** — [Architecture](docs/ARCHITECTURE.md) · [API Reference](docs/API.md) · [Database](docs/DATABASE.md) · [Security](docs/SECURITY.md)
+### Frontend
+* **Framework**: React 19 (Vite SPA)
+* **Styling**: Tailwind CSS & CSS custom-property design tokens (theme switching via `ThemeContext`)
+* **Icons & Animation**: Lucide React, GSAP
+* **HTTP Client**: Axios with credentials interceptors
 
-| Area | What's Built |
+---
+
+## Core Features
+
+| Feature | Description |
 |---|---|
-| **Persistence** | MySQL — 20+ tables. Supports transactional referential integrity, lookup tables, relational mappings, and index optimizations |
-| **Master Data** | Entities: Customer, User/Employee, Role, Department, Business Unit, Product, Invoice, Lookup Master |
-| **Complaint Transaction** | Dynamic Stage 1–11 workflow lifecycle with conditional gates, transitions, and automatic role-based assignment routing |
-| **Customer Assignment** | `Customer_Executive_Assignment` for mapping customer reviews directly to designated department executives |
-| **Workflow Engine** | Dynamic status-tracking state machine checking authority levels, including support for SLA Pause state variables |
-| **Sample Tracking** | Physical sample lifecycle (Requested → Dispatched → Received → Under Testing → Verified) with QC sample contact employee mapping |
-| **Customer Visits** | Scheduling customer visits, recording planned vs actual departure/return dates, and mapping multiple visit team members (`Visit_Members`) with specific remarks |
-| **CAPA** | Corrective & Preventive Action documentation compiled by Operations during resolution |
-| **QC Responses** | `QC_Attachment_Response` to allow the QC team to upload and comment on visual quality files |
-| **Security Hardening** | JWT session tokens in **HTTP-only Cookies**, secure headers via **Helmet**, and API rate limiting |
+| **Multi-Role Authentication** | Separate login flows for Customers and Employees with role-based routing (Admin, KAM, TS, QC, Ops, Marketing, Finance, MD, Customer). |
+| **Dynamic Workflow Engine** | Stage 1 to Stage 11 complaint lifecycle with automatic routing to designated department heads and executives based on Business Unit and Customer, driven by `resolveNextStage()` in `complaintController.js`. |
+| **Scoped Data Access** | List and detail endpoints are filtered through a shared `getVisibilityFilter()` so a user only sees complaints relevant to their role/department/assignment. |
+| **Invoice Line Item Defect Logging** | Direct integration with invoice master records to log defective quantities and computed defect values. |
+| **Sample Tracking** | Track physical sample lifecycle (`Requested` → `Dispatched` → `Received` → `Under Testing` → `Verified`). |
+| **Customer Visits & Remarks** | Schedule customer visits, track departure/return dates, and log multi-member visit remarks (`Visit_Members`). |
+| **QC & CAPA Documentation** | Upload visual quality attachments and log Operations Corrective & Preventive Action (CAPA) analysis. |
+| **Settlement & Credit Notes** | Track commercial settlements and issue/record SAP credit note tracking numbers upon closure. |
 
----
-
-## Screenshots
-
-### Sign in — one system, a portal per role
-Each role gets its own accent colour and navigation. The tab system lets you choose between Customer and Employee/Admin profiles.
-
-![Login screen](docs/screenshots/01-login.png)
-
-### Dashboard — your action queue first
-KPI tiles split complaints, pending reviews, and resolved statuses, and the action queue lists complaints that the logged-in role can act on right now.
-
-![Dashboard](docs/screenshots/02-dashboard.png)
-
-### Complaints — scoped to what you're allowed to see
-Access control is fully enforced by the API: customers and employees only see complaints scoped to their specific assignments and departments.
-
-![Complaints list](docs/screenshots/03-complaints.png)
-
-### Complaint detail — the whole journey on one page
-Workflow tracker, gate status, line items with defective value computations, sample tracking, CAPA documentation, customer visits, and the SAP credit note.
-
-![Complaint detail](docs/screenshots/04-complaint-detail.png)
-
-### New complaint — invoice pulled live from SAP
-Select an active invoice number and SAP return data automatically populates line items; users add the defective quantity, reasons, and attach images.
-
-![New complaint](docs/screenshots/05-new-complaint.png)
-
-### Audit log — every workflow transition logged
-Database-backed workflow logging records status changes, remarks, and user actors at each step of the resolution journey.
-
-![Audit log](docs/screenshots/06-audit-log.png)
-
----
-
-## Quick Start
-
-The project is split into **`backend/`** (Express API + MySQL) and **`frontend/`** (React + Vite SPA).
-
-### Prerequisites
-
-| | |
-|---|---|
-| **Node.js** | 18 or newer |
-| **MySQL / MariaDB** | Server running locally (default port `3306`) |
-
-You need the MySQL server running and configured.
-
-### 1. Backend Setup (Terminal 1)
-
-```bash
-cd backend
-npm install                  # Install dependencies
-cp .env.example .env         # Setup configuration (set your DB user/password)
-npm run init-db              # Creates database tables, schemas, and seeds test data
-npm run dev                  # Starts backend server via nodemon on http://localhost:5000
-```
-
-### 2. Frontend Setup (Terminal 2)
-
-```bash
-cd frontend
-npm install                  # Install dependencies
-npm run dev                  # Starts React development server on http://localhost:5173
-```
-
-Then open **http://localhost:5173** and sign in.
-
----
-
-## Default Test Logins
-
-These accounts are seeded during `npm run init-db` for verification:
-
-| User Type | Email | Password | Role / Role ID |
-|---|---|---|---|
-| **Administrator** | `admin@orientpaper.com` | `password123` | Administrator (Role 4) |
-| **KAM** | `kam.paper@orientpaper.com` | `password123` | Key Account Manager (Role 3) |
-| **TS Executive** | `ts.paper@orientpaper.com` | `password123` | TS Executive (Role 2) |
-| **TS Head** | `tshead.paper@orientpaper.com` | `password123` | TS Head (Role 6) |
-| **QC Executive** | `qc.paper@orientpaper.com` | `password123` | QC Executive (Role 5) |
-| **QC Head** | `qchead.paper@orientpaper.com` | `password123` | QC Head (Role 7) |
-| **Ops Executive** | `ops.paper@orientpaper.com` | `password123` | Ops Executive (Role 8) |
-| **Ops Head** | `opshead.paper@orientpaper.com` | `password123` | Ops Head (Role 9) |
-| **Marketing Exec** | `mktg.paper@orientpaper.com` | `password123` | Marketing Executive (Role 10) |
-| **Marketing Head** | `mktghead.paper@orientpaper.com` | `password123` | Marketing Head (Role 11) |
-| **Finance Exec** | `fin.paper@orientpaper.com` | `password123` | Finance Executive (Role 12) |
-| **Finance Head** | `finhead.paper@orientpaper.com` | `password123` | Finance Head (Role 14) |
-| **Customer** | `paper.procurement@itc.in` | `password123` | Customer Account |
-| **Customer (HB)** | `hb@itc.in` | `hb123` | Customer (HB Division) |
-| **Customer (YB)** | `yb@itc.in` | `yb123` | Customer (YB Division) |
+> **Known gap (from internal audit):** the *listing/viewing* endpoints above are correctly scoped, but the workflow **action** endpoints (`/ts-review`, `/qc-review`, `/capa`, `/approve`, `/finance`, `/action`) currently only check that the caller is logged in — not that they hold the correct role or are the assigned actor for that stage. Uploaded attachments under `/uploads` are also served without an auth check. Both are flagged as priority fixes.
 
 ---
 
@@ -122,53 +43,139 @@ These accounts are seeded during `npm run init-db` for verification:
 
 ```
 CCMS/
-├── backend/                       ← Express API + MySQL Connection
-│   ├── config/                        ← Database connection pools, seeding, and migration runners
-│   ├── controllers/                   ← Route controller endpoints
-│   ├── middleware/                    ← Route guards, file uploads, error handlers
-│   ├── routes/                        ← API routes definition
-│   ├── uploads/                       ← Temporary folder for file uploads
-│   ├── utils/                         ← Response helpers
-│   ├── server.js                      ← Server configuration
-│   ├── .env                           ← Environment configuration (Git-ignored)
+├── backend/                       ← Node.js / Express API
+│   ├── config/                        ← Database pool setup and db_init script
+│   ├── controllers/                   ← Auth and Complaint controllers
+│   ├── middleware/                    ← Authentication & Authorization guards
+│   ├── routes/                        ← Express route definitions
+│   ├── uploads/                       ← Uploaded attachments directory
+│   ├── utils/                         ← Response helper utilities
+│   ├── server.js                      ← Express server entry point
+│   ├── .env.example                   ← Environment configuration template
 │   └── package.json
 ├── frontend/                      ← React Client Application
-│   ├── src/                           ← React components, pages, hooks, contexts
-│   ├── public/                        ← Static assets and icons
+│   ├── src/                           ← React pages, components, hooks, utilities
+│   ├── public/                        ← Static public assets
 │   ├── package.json
 │   └── vite.config.js
-├── database/                      ← Database script folders
-│   ├── migrations/                    ← Versioned schema migrations
-│   └── ccms.sql                       ← Base schema SQL structure definition
-├── docs/                          ← Reference documents
-│   └── screenshots/                   ← Screenshots of the running application
-├── ccms_postman_collection.json   ← Postman collections for integration testing
+├── database/                      ← Database schema & migration scripts
+│   ├── migrations/                    ← Versioned SQL migrations (001 to 010)
+│   └── ccms.sql                       ← Base schema SQL definition
+├── docs/                          ← Reference documentation and screenshots
+│   ├── API.md
+│   ├── ARCHITECTURE.md                ← currently describes an earlier Postgres/services-layer design, not what's implemented — pending rewrite
+│   ├── DATABASE.md
+│   ├── SECURITY.md                    ← same caveat as ARCHITECTURE.md
+│   └── screenshots/
+├── ccms_postman_collection.json   ← Postman collection for API testing
 └── README.md                      ← Main project documentation
 ```
 
 ---
 
+## Quick Start Guide
+
+### Prerequisites
+* **Node.js** v18 or newer
+* **MySQL Server** (v8.0+ or MariaDB) running locally (default port `3306`)
+
+---
+
+### Step 1: Configure Backend Environment
+
+1. Navigate to the `backend/` directory.
+2. Create a `.env` file based on `.env.example`:
+
+```env
+PORT=5000
+NODE_ENV=development
+
+# MySQL Configuration
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=your_mysql_password
+DB_NAME=ccms
+
+# Authentication & CORS
+JWT_SECRET=ccms_jwt_secret_key_12345
+JWT_EXPIRES_IN=8h
+CLIENT_URL=http://localhost:5173
+
+# Uploads
+UPLOAD_PATH=uploads/
+```
+
+---
+
+### Step 2: Initialize Database & Run Backend (Terminal 1)
+
+```bash
+cd backend
+
+# Install node dependencies
+npm install
+
+# Initialize database schema and seed default employee accounts
+npm run init-db
+
+# Start the Express API server with nodemon
+npm run dev
+```
+The backend API server will start at `http://localhost:5000`.
+
+---
+
+### Step 3: Run Frontend Application (Terminal 2)
+
+```bash
+cd frontend
+
+# Install node dependencies
+npm install
+
+# Start the React Vite development server
+npm run dev
+```
+The frontend portal will open at `http://localhost:5173`.
+
+---
+
+## Default Test Logins
+
+`npm run init-db` seeds **employee** accounts with the password **`password123`**:
+
+| User Type | Email | Password | Role / Description |
+|---|---|---|---|
+| **Administrator** | `admin@orientpaper.com` | `password123` | Administrator (Full System Access) |
+| **KAM** | `kam.paper@orientpaper.com` | `password123` | Key Account Manager |
+| **TS Executive** | `ts.paper@orientpaper.com` | `password123` | Technical Services Executive |
+| **TS Head** | `tshead.paper@orientpaper.com` | `password123` | Technical Services Head |
+| **QC Executive** | `qc.paper@orientpaper.com` | `password123` | Quality Control Executive |
+| **QC Head** | `qchead.paper@orientpaper.com` | `password123` | Quality Control Head |
+| **Ops Executive** | `ops.paper@orientpaper.com` | `password123` | Operations Executive |
+| **Ops Head** | `opshead.paper@orientpaper.com` | `password123` | Operations Head |
+| **Marketing Executive** | `mktg.paper@orientpaper.com` | `password123` | Marketing Executive |
+| **Marketing Head** | `mktghead.paper@orientpaper.com` | `password123` | Marketing Head |
+| **Finance Executive** | `fin.paper@orientpaper.com` | `password123` | Finance Executive |
+| **Finance Head** | `finhead.paper@orientpaper.com` | `password123` | Finance Head |
+
+**Customer accounts are not auto-seeded with a password** — `paper.procurement@itc.in` exists in `Customer_Master` but has no `Login_Master` row until activated. For a working customer demo login, run the one-off seed script:
+
+```bash
+node backend/add_hb_customer.js
+```
+which creates `hb@itc.in` / `hb123`. (There's also `add_yb_custom_kam.js` → `yb@itc.in` / `yb123`.) Otherwise, use the in-app invite/activation flow from an Admin or KAM account.
+
+---
+
 ## Database Schemas & Entities
 
-The application consists of the following key tables and database entities:
+MySQL, **30 tables** total — 24 in the base schema (`database/ccms.sql`), 6 added by migrations 003–008.
 
-### Master Data Entities
-*   **Customer_Master**: Store customer attributes including regions, segment levels, app access authorizations, and status controls.
-*   **Employee_Master**: Register organization employees mapped to corresponding departments and dynamic roles.
-*   **Login_Master**: Centralize emails and secure bcrypt-hashed passwords for authentication.
-*   **Product_Master**: Store SKU codes, units of measurement, and categories (Paper/Chemical).
-*   **Invoice_Master**: Store invoice details, unit prices, distribution channels, and quantities for verification checks.
+* **Master Data**: `Customer_Master`, `Employee_Master`, `Role_Master`, `Department_Master`, `Business_Unit_Master`, `Product_Master`, `Invoice_Master`, `Login_Master`, `Login_Type_Master`, `Lookup_Master`, `KAM_Master`.
+* **Workflow & Transactions**: `Complaint_Header`, `Complaint_Line_Item`, `Complaint_Workflow_Log`, `Customer_Executive_Assignment`, `Customer_KAM_Segment_Assignment`.
+* **Sub-Systems**: `Sample_Tracking`, `Visit_Details`, `Visit_Members`, `QC_Attachment_Response`, `CAPA_Analysis`, `Settlement_Details`, `Credit_Note`.
+* **Other**: `Workflow_Configuration`, `System_Configuration`, `Attachment_Master`, `Notification_Log`.
 
-### Transactional Entities
-*   **Complaint_Header**: Register complaints, tracking the current status stage, priorities, sources, and SLA pause states.
-*   **Complaint_Line_Item**: Capture defective quantities per invoice line item and calculate computed defect values.
-*   **Complaint_Workflow_Log**: Immutable transaction records logging transitions, remarks, and user actors.
-*   **Customer_Executive_Assignment**: Mappings to assign customer reviews directly to internal department executives.
-*   **Technical_Service_Details**: Document TS team feedback.
-*   **Visit_Details**: Track customer visits with planned/actual timestamps, findings, outcomes, and signatures.
-*   **Visit_Members**: Assign multiple team members to a customer visit.
-*   **Sample_Tracking**: Track physical quality samples from dispatch to verification testing.
-*   **QC_Attachment_Response**: Record feedback/analysis from the QC team on uploaded attachments.
-*   **CAPA_Analysis**: Operations analysis logging root-cause descriptions, corrective actions, and preventative plans.
-*   **Settlement_Details**: Finalize complaint settlement resolutions and credit notes.
-*   **Credit_Note**: Write back SAP credit note tracking numbers on closure.
+> `Approval_Matrix` is defined in the schema but not queried anywhere in the current codebase — dead table, flagged for either wiring up or removing.
