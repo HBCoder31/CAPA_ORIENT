@@ -72,6 +72,13 @@ async function protect(req, res, next) {
       }
 
       const emp = employees[0];
+
+      // Check if employee is in KAM_Master
+      const [kamCheck] = await pool.execute(
+        `SELECT KAM_ID FROM KAM_Master WHERE Employee_ID = ? AND Is_Active = TRUE`,
+        [emp.Employee_ID]
+      );
+
       req.user = {
         id: emp.Employee_ID,
         name: emp.Employee_Name,
@@ -79,6 +86,7 @@ async function protect(req, res, next) {
         role: emp.Role_Name,
         departmentId: emp.Department_ID,
         businessUnitId: emp.Business_Unit_ID,
+        isKam: kamCheck.length > 0,
       };
     }
 

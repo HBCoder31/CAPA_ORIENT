@@ -173,3 +173,14 @@
   transition: left 0.65s ease;
 }
 .btn-sheen:hover::after { left: 125%; }
+
+/* Style select options to prevent white-on-white text in dark mode */
+select option {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+
+.dark select option {
+  background-color: #0f172a;
+  color: #f1f5f9;
+}

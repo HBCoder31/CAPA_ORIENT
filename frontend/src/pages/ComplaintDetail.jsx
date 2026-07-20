@@ -176,6 +176,23 @@ function ComplaintDetail() {
         setQcRemarks(d.Remarks || '');
       }
 
+      if (qcRes.data.data?.imageResponses?.length > 0) {
+        const comments = {};
+        const replies = {};
+        qcRes.data.data.imageResponses.forEach(r => {
+          comments[r.Attachment_ID] = r.QC_Remarks || '';
+          if (r.Reply_File_Path) {
+            replies[r.Attachment_ID] = {
+              fileName: r.Reply_File_Path.split('/').pop(),
+              filePath: r.Reply_File_Path,
+              isExisting: true
+            };
+          }
+        });
+        setQcImageComments(comments);
+        setQcImageReplies(replies);
+      }
+
       // Pre-fill CAPA details if exists
       if (capaRes.data.data) {
         const cp = capaRes.data.data;
@@ -586,7 +603,7 @@ function ComplaintDetail() {
   const canEditFinance = isEmployee && isFinanceDept && complaint.Complaint_Status_ID === 27 && ['Administrator', 'Finance Executive'].includes(user.role);
 
   // Specific approvals authority
-  const canApproveKam = isEmployee && complaint.Complaint_Status_ID === 17 && ['Administrator', 'KAM'].includes(user.role);
+  const canApproveKam = isEmployee && complaint.Complaint_Status_ID === 17 && (['Administrator', 'KAM'].includes(user.role) || user.isKam);
   const canApproveQcHead = isEmployee && isQcDepartment && complaint.Complaint_Status_ID === 84 && ['Administrator', 'QC Head'].includes(user.role);
   const canApproveOpsHead = isEmployee && isOpsDepartment && complaint.Complaint_Status_ID === 23 && ['Administrator', 'Operations Head'].includes(user.role);
   const canApproveMarketingPm = isEmployee && isMarketingDept && complaint.Complaint_Status_ID === 24 && ['Administrator', 'Marketing Head', 'Marketing Executive'].includes(user.role);
@@ -598,7 +615,7 @@ function ComplaintDetail() {
   const canTakeTimelineAction = canEditTs || canEditQc || canEditCapa || canApproveQcHead || canApproveOpsHead || canApproveMarketingPm || canApproveMarketingHead || canApproveMd || canApproveKam || canApproveFinanceHead;
 
   // Reopen condition check: must be closed, and caller is KAM or Admin
-  const canReopen = isClosed && (user.role === 'KAM' || user.role === 'Administrator');
+  const canReopen = isClosed && (user.role === 'KAM' || user.isKam || user.role === 'Administrator');
 
   const fieldStyle = {
     background: 'var(--bg-surface-2)',
@@ -1471,7 +1488,11 @@ function ComplaintDetail() {
                                   >
                                     <option value="" disabled className="text-slate-700 dark:text-white">-- Select Employee --</option>
                                     {employees
-                                      .filter(emp => !['TS Head', 'QC Head', 'Operations Head', 'Marketing Head', 'Finance Head', 'Managing Director'].includes(emp.Role_Name))
+                                      .filter(emp => {
+                                        if (emp.Employee_ID === data?.complaint?.KAM_Employee_ID) return true;
+                                        const forbiddenRoles = ['TS Head', 'QC Head', 'Operations Head', 'Marketing Head', 'Finance Head', 'Managing Director', 'Administrator', 'Customer', 'KAM'];
+                                        return !forbiddenRoles.includes(emp.Role_Name);
+                                      })
                                       .map(emp => (
                                         <option key={emp.Employee_ID} value={emp.Employee_ID} className="text-slate-700 dark:text-white">
                                           {emp.Employee_Name}{emp.Department_Name ? ` (${emp.Department_Name})` : ''}
@@ -1628,7 +1649,11 @@ function ComplaintDetail() {
                         >
                           <option value="" disabled className="text-slate-700 dark:text-white">-- Assign Contact Employee --</option>
                           {employees
-                            .filter(emp => !['TS Head', 'QC Head', 'Operations Head', 'Marketing Head', 'Finance Head', 'Managing Director'].includes(emp.Role_Name))
+                            .filter(emp => {
+                              if (emp.Employee_ID === data?.complaint?.KAM_Employee_ID) return true;
+                              const forbiddenRoles = ['TS Head', 'QC Head', 'Operations Head', 'Marketing Head', 'Finance Head', 'Managing Director', 'Administrator', 'Customer', 'KAM'];
+                              return !forbiddenRoles.includes(emp.Role_Name);
+                            })
                             .map(emp => (
                               <option key={emp.Employee_ID} value={emp.Employee_ID} className="text-slate-700 dark:text-white">
                                 {emp.Employee_Name}{emp.Department_Name ? ` (${emp.Department_Name})` : ''}

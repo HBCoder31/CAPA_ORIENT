@@ -44,56 +44,84 @@ async function getAssignedEmployeeForDept(connection, customerId, deptId, roleId
   return roleEmployees.length > 0 ? roleEmployees[0].Employee_ID : 100002;
 }
 
-function getVisibilityFilter(user) {
-  let sql = '';
+function getVisibilityFilter(user, isDetail = false) {
+  const conditions = [];
   const params = [];
 
   if (user.role === 'Administrator') {
-    sql = '1=1';
-  } else if (user.role === 'Customer') {
-    sql = 'c.Customer_ID = ? AND c.Complaint_Date >= DATE_SUB(NOW(), INTERVAL 90 DAY)';
+    conditions.push('1=1');
+    return { sql: '1=1', params: [] };
+  }
+
+  if (user.role === 'Customer') {
+    conditions.push('c.Customer_ID = ? AND c.Complaint_Date >= DATE_SUB(NOW(), INTERVAL 90 DAY)');
     params.push(user.id);
-  } else if (user.role === 'KAM') {
-    sql = '(c.Current_Assignee_ID = ? OR c.KAM_ID = (SELECT KAM_ID FROM KAM_Master WHERE Employee_ID = ?)) AND (c.Complaint_Status_ID != 28 OR c.Closure_Date >= DATE_SUB(NOW(), INTERVAL 7 DAY))';
-    params.push(user.id, user.id);
-  } else if (user.role === 'TS Head') {
-    sql = 'c.Current_Department_ID = ? AND c.Complaint_Status_ID IN (18, 19)';
-    params.push(user.departmentId);
-  } else if (user.role === 'TS Engineer') {
-    sql = '(c.Current_Assignee_ID = ? AND c.Complaint_Status_ID IN (18, 19)) OR (c.Complaint_Status_ID = 19 AND EXISTS (SELECT 1 FROM Visit_Members vm WHERE vm.Complaint_ID = c.Complaint_ID AND vm.Employee_ID = ?))';
-    params.push(user.id, user.id);
-  } else if (user.role === 'QC Engineer') {
-    sql = 'c.Current_Assignee_ID = ? AND c.Complaint_Status_ID IN (20, 21)';
-    params.push(user.id);
-  } else if (user.role === 'QC Head') {
-    sql = 'c.Current_Department_ID = ? AND c.Complaint_Status_ID = 84';
-    params.push(user.departmentId);
-  } else if (user.role === 'Operations Engineer') {
-    sql = 'c.Current_Assignee_ID = ? AND c.Complaint_Status_ID = 22';
-    params.push(user.id);
-  } else if (user.role === 'Operations Head') {
-    sql = 'c.Current_Department_ID = ? AND c.Complaint_Status_ID = 23';
-    params.push(user.departmentId);
-  } else if (user.role === 'Marketing Executive') {
-    sql = 'c.Current_Assignee_ID = ? AND c.Complaint_Status_ID = 24';
-    params.push(user.id);
-  } else if (user.role === 'Marketing Head') {
-    sql = 'c.Current_Department_ID = ? AND c.Complaint_Status_ID = 25';
-    params.push(user.departmentId);
-  } else if (user.role === 'Managing Director') {
-    sql = 'c.Complaint_Status_ID = 26';
-  } else if (user.role === 'Finance Executive') {
-    sql = 'c.Current_Assignee_ID = ? AND c.Complaint_Status_ID = 27';
-    params.push(user.id);
-  } else if (user.role === 'Finance Head') {
-    sql = 'c.Current_Department_ID = ? AND c.Complaint_Status_ID = 83';
-    params.push(user.departmentId);
-  } else {
-    // Any other employee role: show complaints where they are a visit member (status Visit Scheduled)
-    sql = 'c.Complaint_Status_ID = 19 AND EXISTS (SELECT 1 FROM Visit_Members vm WHERE vm.Complaint_ID = c.Complaint_ID AND vm.Employee_ID = ?)';
+    return { sql: conditions[0], params };
+  }
+
+  // KAM access: can view any complaint of their customers at any stage (for 90 days)
+  if (user.role === 'KAM' || user.isKam) {
+    conditions.push('c.KAM_ID = (SELECT KAM_ID FROM KAM_Master WHERE Employee_ID = ?) AND c.Complaint_Date >= DATE_SUB(NOW(), INTERVAL 90 DAY)');
     params.push(user.id);
   }
 
+  if (isDetail) {
+    // Permissive detail view: allow if assignee, department matches, mapped to customer, or has ever acted on it (workflow log)
+    conditions.push(`
+      c.Current_Assignee_ID = ? 
+      OR c.Current_Department_ID = ?
+      OR EXISTS (
+        SELECT 1 FROM Customer_Executive_Assignment cea 
+        WHERE cea.Customer_ID = c.Customer_ID AND cea.Employee_ID = ? AND cea.Is_Active = TRUE
+      )
+      OR EXISTS (
+        SELECT 1 FROM Complaint_Workflow_Log wl 
+        WHERE wl.Complaint_ID = c.Complaint_ID AND wl.Action_By = ?
+      )
+    `);
+    params.push(user.id, user.departmentId, user.id, user.id);
+  } else {
+    // Strict active queue filter for department lists (actionable complaints in their pipeline)
+    if (user.role === 'TS Head') {
+      conditions.push('c.Current_Department_ID = ? AND c.Complaint_Status_ID IN (18, 19)');
+      params.push(user.departmentId);
+    } else if (user.role === 'TS Engineer') {
+      conditions.push('(c.Current_Assignee_ID = ? AND c.Complaint_Status_ID IN (18, 19)) OR (c.Complaint_Status_ID IN (18, 19) AND EXISTS (SELECT 1 FROM Customer_Executive_Assignment cea WHERE cea.Customer_ID = c.Customer_ID AND cea.Employee_ID = ? AND cea.Is_Active = TRUE)) OR (c.Complaint_Status_ID = 19 AND EXISTS (SELECT 1 FROM Visit_Members vm WHERE vm.Complaint_ID = c.Complaint_ID AND vm.Employee_ID = ?))');
+      params.push(user.id, user.id, user.id);
+    } else if (user.role === 'QC Engineer') {
+      conditions.push('(c.Current_Assignee_ID = ? AND c.Complaint_Status_ID IN (20, 21)) OR (c.Complaint_Status_ID IN (20, 21) AND EXISTS (SELECT 1 FROM Customer_Executive_Assignment cea WHERE cea.Customer_ID = c.Customer_ID AND cea.Employee_ID = ? AND cea.Is_Active = TRUE))');
+      params.push(user.id, user.id);
+    } else if (user.role === 'QC Head') {
+      conditions.push('c.Current_Department_ID = ? AND c.Complaint_Status_ID = 84');
+      params.push(user.departmentId);
+    } else if (user.role === 'Operations Engineer') {
+      conditions.push('(c.Current_Assignee_ID = ? AND c.Complaint_Status_ID = 22) OR (c.Complaint_Status_ID = 22 AND EXISTS (SELECT 1 FROM Customer_Executive_Assignment cea WHERE cea.Customer_ID = c.Customer_ID AND cea.Employee_ID = ? AND cea.Is_Active = TRUE))');
+      params.push(user.id, user.id);
+    } else if (user.role === 'Operations Head') {
+      conditions.push('c.Current_Department_ID = ? AND c.Complaint_Status_ID = 23');
+      params.push(user.departmentId);
+    } else if (user.role === 'Marketing Executive') {
+      conditions.push('(c.Current_Assignee_ID = ? AND c.Complaint_Status_ID = 24) OR (c.Complaint_Status_ID = 24 AND EXISTS (SELECT 1 FROM Customer_Executive_Assignment cea WHERE cea.Customer_ID = c.Customer_ID AND cea.Employee_ID = ? AND cea.Is_Active = TRUE))');
+      params.push(user.id, user.id);
+    } else if (user.role === 'Marketing Head') {
+      conditions.push('c.Current_Department_ID = ? AND c.Complaint_Status_ID = 25');
+      params.push(user.departmentId);
+    } else if (user.role === 'Managing Director') {
+      conditions.push('c.Complaint_Status_ID = 26');
+    } else if (user.role === 'Finance Executive') {
+      conditions.push('(c.Current_Assignee_ID = ? AND c.Complaint_Status_ID = 27) OR (c.Complaint_Status_ID = 27 AND EXISTS (SELECT 1 FROM Customer_Executive_Assignment cea WHERE cea.Customer_ID = c.Customer_ID AND cea.Employee_ID = ? AND cea.Is_Active = TRUE))');
+      params.push(user.id, user.id);
+    } else if (user.role === 'Finance Head') {
+      conditions.push('c.Current_Department_ID = ? AND c.Complaint_Status_ID = 83');
+      params.push(user.departmentId);
+    }
+
+    if (conditions.length === 0) {
+      conditions.push('1=0');
+    }
+  }
+
+  const sql = conditions.map(c => `(${c})`).join(' OR ');
   return { sql, params };
 }
 
@@ -312,7 +340,7 @@ async function getCustomers(req, res, next) {
     const params = [];
 
     // Scope KAM role: only show customers assigned to this KAM
-    if (req.user.role === 'KAM') {
+    if (req.user.role === 'KAM' || req.user.isKam) {
       query += ` AND k.Employee_ID = ?`;
       params.push(req.user.id);
     }
@@ -364,7 +392,7 @@ async function getInvoices(req, res, next) {
       }
     }
 
-    const isRestricted = req.user.role === 'Customer' || req.user.role === 'KAM';
+    const isRestricted = req.user.role === 'Customer' || req.user.role === 'KAM' || req.user.isKam;
     let query = `
       SELECT DISTINCT Invoice_No, Invoice_Date, Division 
       FROM Invoice_Master 
@@ -393,7 +421,7 @@ async function getInvoiceDetails(req, res, next) {
     const { invoiceNo } = req.params;
 
     // Validate ownership and 90-day restriction if customer or KAM
-    const isRestricted = req.user.role === 'Customer' || req.user.role === 'KAM';
+    const isRestricted = req.user.role === 'Customer' || req.user.role === 'KAM' || req.user.isKam;
     if (isRestricted) {
       let validationQuery = `
         SELECT im.Customer_ID, im.Invoice_Date 
@@ -486,7 +514,7 @@ async function createComplaint(req, res, next) {
     // 1. Resolve customer and channel if employee logs it
     if (req.user.role !== 'Customer') {
       customerId = req.body.customerId;
-      sourceId = req.user.role === 'KAM' ? 36 : 37; // KAM or Sales Lookup_ID
+      sourceId = (req.user.role === 'KAM' || req.user.isKam) ? 36 : 37; // KAM or Sales Lookup_ID
       if (!customerId) {
         await connection.rollback();
         return sendError(res, 'Customer ID is required when logging on behalf of a customer.', 400);
@@ -590,6 +618,39 @@ async function createComplaint(req, res, next) {
     let kamId = customer.KAM_ID;
     let assignedKamEmployeeId = customer.Employee_ID;
 
+    // Auto assign KAM if not mapped
+    if (!kamId) {
+      const [leastLoaded] = await connection.execute(`
+        SELECT k.KAM_ID, k.Employee_ID 
+        FROM KAM_Master k
+        LEFT JOIN Customer_Master c ON k.KAM_ID = c.KAM_ID
+        WHERE k.Is_Active = TRUE
+        GROUP BY k.KAM_ID, k.Employee_ID
+        ORDER BY COUNT(c.Customer_ID) ASC
+        LIMIT 1
+      `);
+      if (leastLoaded.length > 0) {
+        kamId = leastLoaded[0].KAM_ID;
+        assignedKamEmployeeId = leastLoaded[0].Employee_ID;
+        await connection.execute(
+          'UPDATE Customer_Master SET KAM_ID = ? WHERE Customer_ID = ?',
+          [kamId, customerId]
+        );
+        await connection.execute(
+          `INSERT INTO Customer_KAM_Segment_Assignment (Customer_ID, KAM_ID, Business_Unit_ID, Assigned_By, Is_Active)
+           VALUES (?, ?, 1, 100014, TRUE)
+           ON DUPLICATE KEY UPDATE KAM_ID = ?, Is_Active = TRUE`,
+          [customerId, kamId, kamId]
+        );
+      }
+    }
+
+    // Restrict KAMs to only log complaints for their assigned customers
+    if ((req.user.role === 'KAM' || req.user.isKam) && assignedKamEmployeeId !== req.user.id) {
+      await connection.rollback();
+      return sendError(res, 'Access denied. You can only register complaints for your assigned customers.', 403);
+    }
+
     // 4. Calculate SLA Due Date based on priority
     let resolvedPriorityId = priorityId;
     if (req.user.role === 'Customer') {
@@ -657,7 +718,7 @@ async function createComplaint(req, res, next) {
       let workflowConfigId;
       let logRemarks = '';
 
-      if (req.user.role === 'KAM') {
+      if (req.user.role === 'KAM' || req.user.isKam) {
         const nextStage = await resolveNextStage(connection, 1, businessUnitId, customerId);
         if (!nextStage) {
           await connection.rollback();
@@ -825,7 +886,7 @@ async function createComplaint(req, res, next) {
 
     // Resolve initial assignee name for the success message
     let initialAssigneeName = 'Unassigned';
-    if (req.user.role === 'KAM') {
+    if (req.user.role === 'KAM' || req.user.isKam) {
       const [lastHeader] = await connection.execute(
         'SELECT Current_Assignee_ID FROM Complaint_Header WHERE Complaint_ID = ?',
         [createdComplaints[0].complaintId]
@@ -839,7 +900,7 @@ async function createComplaint(req, res, next) {
 
     await connection.commit();
     
-    const initialQueueName = req.user.role === 'KAM' ? 'Technical Services (TS) Review' : 'Submitted (Pending KAM Review)';
+    const initialQueueName = (req.user.role === 'KAM' || req.user.isKam) ? 'Technical Services (TS) Review' : 'Submitted (Pending KAM Review)';
 
     return sendSuccess(res, { 
       complaintId: createdComplaints[0].complaintId,
@@ -918,13 +979,14 @@ async function getComplaintDetails(req, res, next) {
     const { id } = req.params;
 
     // 1. Fetch header details
-    const filter = getVisibilityFilter(req.user);
+    const filter = getVisibilityFilter(req.user, true);
     const [headers] = await pool.execute(
       `SELECT c.*, cust.Customer_Name, cust.Customer_Email, cust.Customer_Phone,
               l_status.Lookup_Value as Status, l_priority.Lookup_Value as Severity,
               bu.Business_Unit_Name, d.Department_Name, e.Employee_Name as Assignee,
               r.Role_Name as Designation,
-              k_emp.Employee_Name as KAM_Name
+              k_emp.Employee_Name as KAM_Name,
+              k_emp.Employee_ID as KAM_Employee_ID
        FROM Complaint_Header c
        JOIN Customer_Master cust ON c.Customer_ID = cust.Customer_ID
        JOIN Lookup_Master l_status ON c.Complaint_Status_ID = l_status.Lookup_ID
@@ -1588,14 +1650,24 @@ async function submitQcReview(req, res, next) {
 
       for (const resp of imageResponses) {
         let replyPath = null;
-        if (resp.replyImage && resp.replyImage.content) {
-          const uniqueFileName = `reply_${Date.now()}_${resp.replyImage.fileName.replace(/\s+/g, '_')}`;
-          const filePath = path.join(uploadsDir, uniqueFileName);
-          replyPath = `uploads/${uniqueFileName}`;
+        let shouldUpdatePath = false;
 
-          const base64Data = resp.replyImage.content.replace(/^data:image\/\w+;base64,/, "");
-          const buffer = Buffer.from(base64Data, 'base64');
-          fs.writeFileSync(filePath, buffer);
+        if (resp.replyImage) {
+          if (resp.replyImage.content) {
+            const uniqueFileName = `reply_${Date.now()}_${resp.replyImage.fileName.replace(/\s+/g, '_')}`;
+            const filePath = path.join(uploadsDir, uniqueFileName);
+            replyPath = `uploads/${uniqueFileName}`;
+
+            const base64Data = resp.replyImage.content.replace(/^data:image\/\w+;base64,/, "");
+            const buffer = Buffer.from(base64Data, 'base64');
+            fs.writeFileSync(filePath, buffer);
+            shouldUpdatePath = true;
+          } else if (resp.replyImage.isExisting) {
+            shouldUpdatePath = false;
+          }
+        } else {
+          replyPath = null;
+          shouldUpdatePath = true;
         }
 
         // Insert or update response
@@ -1604,12 +1676,21 @@ async function submitQcReview(req, res, next) {
           [qcDetailsId, resp.attachmentId]
         );
         if (existingResp.length > 0) {
-          await connection.execute(
-            `UPDATE QC_Attachment_Response 
-             SET QC_Remarks = ?, Reply_File_Path = COALESCE(?, Reply_File_Path)
-             WHERE QC_Response_ID = ?`,
-            [resp.qcRemarks || '', replyPath, existingResp[0].QC_Response_ID]
-          );
+          if (shouldUpdatePath) {
+            await connection.execute(
+              `UPDATE QC_Attachment_Response 
+               SET QC_Remarks = ?, Reply_File_Path = ?
+               WHERE QC_Response_ID = ?`,
+              [resp.qcRemarks || '', replyPath, existingResp[0].QC_Response_ID]
+            );
+          } else {
+            await connection.execute(
+              `UPDATE QC_Attachment_Response 
+               SET QC_Remarks = ?
+               WHERE QC_Response_ID = ?`,
+              [resp.qcRemarks || '', existingResp[0].QC_Response_ID]
+            );
+          }
         } else {
           await connection.execute(
             `INSERT INTO QC_Attachment_Response (QC_Details_ID, Attachment_ID, QC_Remarks, Reply_File_Path)
@@ -1895,8 +1976,12 @@ async function approveStage(req, res, next) {
     };
 
     if (allowedRoles[stage] && !allowedRoles[stage].includes(req.user.role)) {
-      await connection.rollback();
-      return sendError(res, `Unauthorized: Your role '${req.user.role}' is not allowed to approve stage '${stage}'.`, 403);
+      if (stage === 'kam' && req.user.isKam) {
+        // Mapped as a KAM, allow approval
+      } else {
+        await connection.rollback();
+        return sendError(res, `Unauthorized: Your role '${req.user.role}' is not allowed to approve stage '${stage}'.`, 403);
+      }
     }
 
     const [headers] = await connection.execute(
@@ -2173,7 +2258,7 @@ async function timelineAction(req, res, next) {
     } 
     else if (action === 'reopen') {
       // Role check: Only KAMs and Administrators can reopen complaints
-      if (!['Administrator', 'KAM'].includes(req.user.role)) {
+      if (!['Administrator', 'KAM'].includes(req.user.role) && !req.user.isKam) {
         await connection.rollback();
         return sendError(res, 'Unauthorized: Only KAMs and Administrators can reopen closed complaints.', 403);
       }

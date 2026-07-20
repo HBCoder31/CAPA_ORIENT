@@ -130,9 +130,16 @@ async function login(req, res, next) {
 
       const emp = employees[0];
 
+      // Check if employee is in KAM_Master
+      const [kamCheck] = await pool.execute(
+        `SELECT KAM_ID FROM KAM_Master WHERE Employee_ID = ? AND Is_Active = TRUE`,
+        [emp.Employee_ID]
+      );
+      const isKam = kamCheck.length > 0;
+
       // Generate JWT
       const token = jwt.sign(
-        { id: emp.Employee_ID, email: emp.Official_Email, role: emp.Role_Name },
+        { id: emp.Employee_ID, email: emp.Official_Email, role: emp.Role_Name, isKam },
         process.env.JWT_SECRET || 'ccms_dev_jwt_secret_key_987654321',
         { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
       );
@@ -165,6 +172,7 @@ async function login(req, res, next) {
             name: emp.Employee_Name,
             email: emp.Official_Email,
             role: emp.Role_Name,
+            isKam
           },
         },
         'Login successful.'
@@ -418,7 +426,7 @@ async function checkRegistrationIdentity(req, res, next) {
 
     // Verify customer exists in Customer_Master with this ID and Email
     const [customers] = await pool.execute(
-      `SELECT Customer_ID, Customer_Name, Customer_Email, Is_Active 
+      `SELECT Customer_ID, Customer_Name, Customer_Email, KAM_ID, Is_Active 
        FROM Customer_Master 
        WHERE Customer_ID = ? AND Customer_Email = ?`,
       [customerId, email]
@@ -435,6 +443,33 @@ async function checkRegistrationIdentity(req, res, next) {
     const customer = customers[0];
     if (!customer.Is_Active) {
       return sendError(res, 'Customer account is currently marked inactive.', 403);
+    }
+
+    // Auto assign KAM if not mapped
+    if (!customer.KAM_ID) {
+      const [leastLoaded] = await pool.execute(`
+        SELECT k.KAM_ID 
+        FROM KAM_Master k
+        LEFT JOIN Customer_Master c ON k.KAM_ID = c.KAM_ID
+        WHERE k.Is_Active = TRUE
+        GROUP BY k.KAM_ID
+        ORDER BY COUNT(c.Customer_ID) ASC
+        LIMIT 1
+      `);
+      if (leastLoaded.length > 0) {
+        const kamId = leastLoaded[0].KAM_ID;
+        await pool.execute(
+          'UPDATE Customer_Master SET KAM_ID = ? WHERE Customer_ID = ?',
+          [kamId, customerId]
+        );
+        await pool.execute(
+          `INSERT INTO Customer_KAM_Segment_Assignment (Customer_ID, KAM_ID, Business_Unit_ID, Assigned_By, Is_Active)
+           VALUES (?, ?, 1, 100014, TRUE)
+           ON DUPLICATE KEY UPDATE KAM_ID = ?, Is_Active = TRUE`,
+          [customerId, kamId, kamId]
+        );
+        customer.KAM_ID = kamId;
+      }
     }
 
     // Check if they already have login credentials in Login_Master
@@ -476,7 +511,7 @@ async function selfRegisterCustomer(req, res, next) {
 
     // Verify profile again
     const [customers] = await pool.execute(
-      `SELECT Customer_ID, Customer_Name, Customer_Email, Is_Active 
+      `SELECT Customer_ID, Customer_Name, Customer_Email, KAM_ID, Is_Active 
        FROM Customer_Master 
        WHERE Customer_ID = ? AND Customer_Email = ?`,
       [customerId, email]
@@ -489,6 +524,33 @@ async function selfRegisterCustomer(req, res, next) {
     const customer = customers[0];
     if (!customer.Is_Active) {
       return sendError(res, 'Customer account is marked inactive.', 403);
+    }
+
+    // Auto assign KAM if not mapped
+    if (!customer.KAM_ID) {
+      const [leastLoaded] = await pool.execute(`
+        SELECT k.KAM_ID 
+        FROM KAM_Master k
+        LEFT JOIN Customer_Master c ON k.KAM_ID = c.KAM_ID
+        WHERE k.Is_Active = TRUE
+        GROUP BY k.KAM_ID
+        ORDER BY COUNT(c.Customer_ID) ASC
+        LIMIT 1
+      `);
+      if (leastLoaded.length > 0) {
+        const kamId = leastLoaded[0].KAM_ID;
+        await pool.execute(
+          'UPDATE Customer_Master SET KAM_ID = ? WHERE Customer_ID = ?',
+          [kamId, customerId]
+        );
+        await pool.execute(
+          `INSERT INTO Customer_KAM_Segment_Assignment (Customer_ID, KAM_ID, Business_Unit_ID, Assigned_By, Is_Active)
+           VALUES (?, ?, 1, 100014, TRUE)
+           ON DUPLICATE KEY UPDATE KAM_ID = ?, Is_Active = TRUE`,
+          [customerId, kamId, kamId]
+        );
+        customer.KAM_ID = kamId;
+      }
     }
 
     // Hash the password

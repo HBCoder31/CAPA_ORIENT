@@ -33,11 +33,11 @@ CREATE TABLE IF NOT EXISTS Login_Master (
     FOREIGN KEY (Customer_ID) REFERENCES Customer_Master(Customer_ID) ON DELETE SET NULL
 );
 
--- 4. Port existing Customer Credentials
+-- 4. Port existing Customer Credentials (with fallback to default password123 hash)
 INSERT INTO Login_Master (Email, Password_Hash, Login_Type_ID, Customer_ID, Is_Active, Last_Login)
-SELECT Customer_Email, Password_Hash, 1, Customer_ID, Is_Active, NULL
+SELECT Customer_Email, COALESCE(Password_Hash, '$2a$10$3B2fLo5NgMxvDfqnImx3oeKknhKfFX/CijGUCa.41Q1Fq.uKhzY8.'), 1, Customer_ID, Is_Active, NULL
 FROM Customer_Master
-WHERE Password_Hash IS NOT NULL AND Customer_Email IS NOT NULL AND Customer_Email != ''
+WHERE Customer_Email IS NOT NULL AND Customer_Email != ''
 ON DUPLICATE KEY UPDATE Password_Hash = VALUES(Password_Hash), Customer_ID = VALUES(Customer_ID);
 
 -- 5. Port existing Employee/Admin Credentials

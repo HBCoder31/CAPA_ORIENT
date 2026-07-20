@@ -304,7 +304,7 @@ function ComplaintForm() {
       const payload = {
         customerId: selectedCustomerId,
         priorityId,
-        reportedChannel: isCustomer ? 'Portal' : (user.role === 'KAM' ? 'KAM' : 'Sales'),
+        reportedChannel: isCustomer ? 'Portal' : ((user.role === 'KAM' || user.isKam) ? 'KAM' : 'Sales'),
         lineItems: Object.values(selectedItems).map(item => ({
           invoiceNo: item.invoiceNo,
           lineItem: item.lineItem,
