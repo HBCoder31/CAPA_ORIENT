@@ -19,6 +19,19 @@ const MIGRATION_3_FILE_PATH = path.join(__dirname, '..', '..', 'database', 'migr
 const MIGRATION_4_FILE_PATH = path.join(__dirname, '..', '..', 'database', 'migrations', '004_workflow_stages_finance_split.sql');
 const MIGRATION_5_FILE_PATH = path.join(__dirname, '..', '..', 'database', 'migrations', '005_create_login_tables.sql');
 
+function parseSqlStatements(sql) {
+  const cleaned = sql
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('--'))
+    .join('\n');
+
+  return cleaned
+    .split(/;\s*(?:\n|$)/)
+    .map((stmt) => stmt.trim())
+    .filter((stmt) => stmt.length > 0);
+}
+
 async function run() {
   console.log('🔄 Starting Database Initialization...');
   let connection;
@@ -103,14 +116,14 @@ async function run() {
     }
 
     // 3c. Apply migration: Customer_KAM_Segment_Assignment table (if missing)
-    const [tables] = await connection.query(`SHOW TABLES LIKE 'Customer_KAM_Segment_Assignment'`);
+    const [tables] = await connection.query(
+      `SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND LOWER(TABLE_NAME) = ?`,
+      [process.env.DB_NAME || 'ccms', 'customer_kam_segment_assignment']
+    );
     if (tables.length === 0) {
       console.log('⚙️ Applying Customer_KAM_Segment_Assignment table migration...');
       const migrationSql = fs.readFileSync(MIGRATION_3_FILE_PATH, 'utf8');
-      const statements = migrationSql
-        .split(/;\s*$/m)
-        .map(stmt => stmt.trim())
-        .filter(stmt => stmt.length > 0 && !stmt.startsWith('--'));
+      const statements = parseSqlStatements(migrationSql);
 
       for (const statement of statements) {
         await connection.query(statement);

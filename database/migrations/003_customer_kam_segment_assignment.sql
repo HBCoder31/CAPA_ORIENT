@@ -4,7 +4,7 @@
 --         Customer_Master.KAM_ID cannot represent this — it's single-valued.
 -- Date: 2026-07-13
 
-CREATE TABLE Customer_KAM_Segment_Assignment (
+CREATE TABLE IF NOT EXISTS Customer_KAM_Segment_Assignment (
     Assignment_ID       BIGINT       PRIMARY KEY AUTO_INCREMENT,
     Customer_ID         VARCHAR(20)  NOT NULL,
     Business_Unit_ID    BIGINT       NOT NULL,   -- the "segment"
