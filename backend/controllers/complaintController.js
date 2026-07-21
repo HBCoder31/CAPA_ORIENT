@@ -65,6 +65,11 @@ function getVisibilityFilter(user, isDetail = false) {
     params.push(user.id);
   }
 
+  // Visit members access: if complaint is in Visit Scheduled status (19) and they are a visit member
+  // (allows any engineer from any department to see and submit remarks for the scheduled visit)
+  conditions.push('c.Complaint_Status_ID = 19 AND EXISTS (SELECT 1 FROM Visit_Members vm WHERE vm.Complaint_ID = c.Complaint_ID AND vm.Employee_ID = ?)');
+  params.push(user.id);
+
   if (isDetail) {
     // Permissive detail view: allow if assignee, department matches, mapped to customer, or has ever acted on it (workflow log)
     conditions.push(`
