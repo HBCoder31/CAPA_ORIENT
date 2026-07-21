@@ -2232,21 +2232,13 @@ async function approveStage(req, res, next) {
       logRemarks = `Reviewed by Marketing PM. Forwarded to Marketing Head for approval. Remarks: ${remarks || ''}`;
     } 
     else if (stage === 'marketing-head') {
-      let finalSettlementAmount = header.Expected_Settlement_Amount;
-      let auditTrail = '';
-      if (settlementAmount !== undefined) {
-        finalSettlementAmount = parseFloat(settlementAmount);
-        const oldAmount = header.Expected_Settlement_Amount !== null ? parseFloat(header.Expected_Settlement_Amount) : null;
-        if (oldAmount !== null && oldAmount !== finalSettlementAmount) {
-          auditTrail = ` [AUDIT: Settlement amount overridden from ₹${oldAmount} to ₹${finalSettlementAmount} by Admin/Reviewer]`;
-        }
-        await connection.execute(
-          'UPDATE Complaint_Header SET Expected_Settlement_Amount = ? WHERE Complaint_ID = ?',
-          [finalSettlementAmount, id]
-        );
-      }
+      const finalSettlementAmount = parseFloat(header.Total_Complaint_Value);
+      await connection.execute(
+        'UPDATE Complaint_Header SET Expected_Settlement_Amount = ? WHERE Complaint_ID = ?',
+        [finalSettlementAmount, id]
+      );
 
-      const settlementValue = finalSettlementAmount !== null ? finalSettlementAmount : parseFloat(header.Total_Complaint_Value);
+      const settlementValue = finalSettlementAmount;
 
       // Query MD approval limit dynamically from configuration
       let mdApprovalLimit = 100000;
@@ -2263,14 +2255,14 @@ async function approveStage(req, res, next) {
         nextStatusId = next.statusId;
         nextDeptId = next.departmentId;
         nextAssigneeId = next.assigneeId;
-        logRemarks = `Approved by Marketing Head. Escalated to MD for settlement > ₹${mdApprovalLimit.toLocaleString('en-IN')}. Remarks: ${remarks || ''}${auditTrail}`;
+        logRemarks = `Approved by Marketing Head. Escalated to MD for settlement > ₹${mdApprovalLimit.toLocaleString('en-IN')}. Remarks: ${remarks || ''}`;
       } else {
         // Skip MD and go straight to Finance Head Approval (Stage 10)
         const next = await resolveNextStage(connection, 9, buId, header.Customer_ID);
         nextStatusId = next.statusId;
         nextDeptId = next.departmentId;
         nextAssigneeId = next.assigneeId;
-        logRemarks = `Approved by Marketing Head. Sent to Finance Head. Remarks: ${remarks || ''}${auditTrail}`;
+        logRemarks = `Approved by Marketing Head. Sent to Finance Head. Remarks: ${remarks || ''}`;
       }
     } 
     else if (stage === 'md') {
@@ -2304,8 +2296,7 @@ async function approveStage(req, res, next) {
 
     // If transitioning to Finance Pending (27), write settlement details
     if (nextStatusId === 27) {
-      const finalSettlementAmount = stage === 'marketing-head' ? parseFloat(settlementAmount) : header.Expected_Settlement_Amount;
-      const settlementValue = finalSettlementAmount !== null ? finalSettlementAmount : parseFloat(header.Total_Complaint_Value);
+      const settlementValue = parseFloat(header.Total_Complaint_Value);
 
       const [existingSet] = await connection.execute('SELECT Settlement_ID FROM Settlement_Details WHERE Complaint_ID = ?', [id]);
       if (existingSet.length > 0) {
@@ -2313,14 +2304,14 @@ async function approveStage(req, res, next) {
           `UPDATE Settlement_Details 
            SET Settlement_Type_ID = 59, Proposed_Amount = ?, Approved_Amount = ?, Approval_Status_ID = 77, Approved_By = ?, Approval_Date = NOW(), Updated_On = NOW(), Updated_By = ?
            WHERE Settlement_ID = ?`,
-          [parseFloat(header.Total_Complaint_Value), settlementValue, req.user.id, req.user.id, existingSet[0].Settlement_ID]
+          [settlementValue, settlementValue, req.user.id, req.user.id, existingSet[0].Settlement_ID]
         );
       } else {
         await connection.execute(
           `INSERT INTO Settlement_Details (
              Complaint_ID, Settlement_Type_ID, Proposed_Amount, Approved_Amount, Approval_Status_ID, Approved_By, Approval_Date, Created_On, Created_By
            ) VALUES (?, 59, ?, ?, 77, ?, NOW(), NOW(), ?)`,
-          [id, parseFloat(header.Total_Complaint_Value), settlementValue, req.user.id, req.user.id]
+          [id, settlementValue, settlementValue, req.user.id, req.user.id]
         );
       }
     }

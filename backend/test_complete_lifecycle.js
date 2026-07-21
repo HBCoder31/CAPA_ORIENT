@@ -136,13 +136,20 @@ async function runLifecycleTest() {
       remarks: 'Logging received sample.'
     }, { headers: { Authorization: `Bearer ${qcToken}` } });
 
-    // 7. QC forwards to Ops (CAPA Pending)
-    console.log('\nTest 6: QC forwarding to Operations...');
+    // 7. QC forwards to QC Head
+    console.log('\nTest 6: QC forwarding to QC Head for verification...');
     await axios.post(`${BASE_URL}/complaints/${complaintId}/qc-review`, {
       actionType: 'forward',
       sampleVerified: true,
       observation: 'GSM verified. Defect is genuine.'
     }, { headers: { Authorization: `Bearer ${qcToken}` } });
+
+    // 7b. QC Head approves and forwards to Operations (CAPA Pending)
+    console.log('\nTest 6b: QC Head verifying and approving lab findings...');
+    await axios.post(`${BASE_URL}/complaints/${complaintId}/approve`, {
+      stage: 'qc-head',
+      remarks: 'QC Head approved and verified lab test reports.'
+    }, { headers: { Authorization: `Bearer ${qcHeadToken}` } });
 
     // 8. Ops logs CAPA and approves CAPA
     console.log('\nTest 7: Operations logging and approving CAPA details...');
