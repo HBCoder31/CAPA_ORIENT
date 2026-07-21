@@ -18,7 +18,8 @@ import {
   Ban,
   TrendingUp,
   RotateCcw,
-  Check
+  Check,
+  HelpCircle
 } from 'lucide-react';
 import { gsap } from 'gsap';
 import { formatStatus } from './Dashboard';
@@ -136,8 +137,36 @@ function ComplaintDetail() {
         } else {
           setRejectAction('reject');
         }
+        setApproveSettlementAmount(res.data.data.complaint.Expected_Settlement_Amount !== null 
+          ? String(res.data.data.complaint.Expected_Settlement_Amount) 
+          : String(res.data.data.complaint.Total_Complaint_Value || '')
+        );
       }
-      setTsData(tsRes.data.data);
+      const fetchedTsData = tsRes.data.data;
+      setTsData(fetchedTsData);
+      if (fetchedTsData) {
+        const visit = fetchedTsData.visits?.[0];
+        const isVisitCompleted = visit?.Visit_Status_ID === 52;
+        const isVisitRequested = fetchedTsData.tsDetails?.Visit_Required === 1;
+
+        if (user.role === 'TS Engineer') {
+          if (!isVisitCompleted) {
+            setTsAction('request-visit');
+          } else {
+            setTsAction('complete-visit');
+          }
+        } else if (user.role === 'TS Head' || user.role === 'Administrator') {
+          if (!isVisitCompleted) {
+            if (isVisitRequested) {
+              setTsAction('visit-schedule');
+            } else {
+              setTsAction('forward');
+            }
+          } else {
+            setTsAction('forward');
+          }
+        }
+      }
       setQcData(qcRes.data.data);
       setCapaData(capaRes.data.data);
       setEmployees(empRes.data.data || []);
@@ -617,6 +646,9 @@ function ComplaintDetail() {
 
   // General back-and-forth action panel is visible to anyone who is authorized to do approvals/work on the stage
   const canTakeTimelineAction = canEditTs || canEditQc || canEditCapa || canApproveQcHead || canApproveOpsHead || canApproveMarketingPm || canApproveMarketingHead || canApproveMd || canApproveKam || canApproveFinanceHead;
+
+  // Clarification response condition
+  const canProvideClarification = complaint && complaint.SLA_Paused && complaint.SLA_Pause_Reason === 'Clarification Requested' && (String(complaint.Current_Assignee_ID) === String(user.id) || user.role === 'Administrator');
 
   // Reopen condition check: must be closed, and caller is KAM or Admin
   const canReopen = isClosed && (user.role === 'KAM' || user.isKam || user.role === 'Administrator');
@@ -1423,20 +1455,43 @@ function ComplaintDetail() {
                       style={fieldStyle}
                       className="w-full px-3 py-2.5 rounded-xl text-xs outline-none"
                     >
-                      <option value="forward" className="text-slate-700 dark:text-white">Forward to QC</option>
-                      {user.role === 'TS Engineer' && (
-                        <option value="visit-request" className="text-slate-700 dark:text-white">Request Customer Visit</option>
-                      )}
-                      {['TS Head', 'Administrator'].includes(user.role) && (
-                        <>
-                          <option value="visit-schedule" className="text-slate-700 dark:text-white">Schedule Customer Visit</option>
-                          <option value="close" className="text-slate-700 dark:text-white">Close Complaint</option>
-                        </>
-                      )}
+                      {(() => {
+                        const visit = tsData?.visits?.[0];
+                        const isVisitCompleted = visit?.Visit_Status_ID === 52;
+                        const isVisitRequested = tsData?.tsDetails?.Visit_Required === 1;
+
+                        const options = [];
+
+                        if (user.role === 'TS Engineer') {
+                          if (!isVisitCompleted) {
+                            options.push(<option key="request-visit" value="request-visit" className="text-slate-700 dark:text-white">Request Customer Visit</option>);
+                            options.push(<option key="forward" value="forward" className="text-slate-700 dark:text-white">Forward to QC (No Visit)</option>);
+                          } else {
+                            options.push(<option key="complete-visit" value="complete-visit" className="text-slate-700 dark:text-white">Complete Visit</option>);
+                            options.push(<option key="send-back-visit" value="send-back-visit" className="text-slate-700 dark:text-white">Send Back to Visit Members</option>);
+                          }
+                        } else if (user.role === 'TS Head' || user.role === 'Administrator') {
+                          if (!isVisitCompleted) {
+                            if (isVisitRequested) {
+                              options.push(<option key="visit-schedule" value="visit-schedule" className="text-slate-700 dark:text-white">Schedule Customer Visit (Confirm YES)</option>);
+                              options.push(<option key="forward" value="forward" className="text-slate-700 dark:text-white">Forward to QC (Confirm NO)</option>);
+                            } else {
+                              options.push(<option key="forward" value="forward" className="text-slate-700 dark:text-white">Forward to QC</option>);
+                              options.push(<option key="visit-schedule" value="visit-schedule" className="text-slate-700 dark:text-white">Schedule Customer Visit</option>);
+                            }
+                          } else {
+                            options.push(<option key="forward" value="forward" className="text-slate-700 dark:text-white">Verify & Forward to QC</option>);
+                            options.push(<option key="reject-to-eng" value="reject-to-eng" className="text-slate-700 dark:text-white">Reject & Return to TS Engineer</option>);
+                          }
+                          options.push(<option key="close" value="close" className="text-slate-700 dark:text-white">Close Complaint</option>);
+                        }
+
+                        return options;
+                      })()}
                     </select>
                   </div>
 
-                  {tsAction === 'visit-request' && user.role === 'TS Engineer' && (
+                  {['visit-request', 'request-visit'].includes(tsAction) && user.role === 'TS Engineer' && (
                     <div className="rounded-3xl p-4 bg-slate-950/60 border border-slate-800 text-sm text-slate-200">
                       <p className="font-semibold">Visit request submitted.</p>
                       <p>TS Head will confirm and schedule the visit, including employees and dates. This action only requests the visit; scheduling is handled separately.</p>
@@ -1450,109 +1505,92 @@ function ComplaintDetail() {
                     return (
                       <div className="space-y-4 pt-3 mt-1 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
 
-                        {/* Visit Required checkbox */}
-                        <div className="flex items-center justify-between px-3 py-2.5 rounded-xl" style={{ background: 'var(--bg-surface-2)', border: '1px solid var(--border-subtle)' }}>
-                          <label htmlFor="tsVisit" className="text-xs font-semibold cursor-pointer" style={{ color: 'var(--text-secondary)' }}>Visit Required</label>
-                          <input
-                            type="checkbox"
-                            id="tsVisit"
-                            checked={tsVisitReq}
-                            onChange={(e) => setTsVisitReq(e.target.checked)}
-                            disabled={isLocked}
-                            className="w-4 h-4 rounded cursor-pointer"
-                          />
+                        {/* Number of members */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Number of Visit Members</label>
+                          <div className="flex space-x-2">
+                            {[1, 2, 3].map(n => (
+                              <button
+                                key={n}
+                                type="button"
+                                disabled={isLocked}
+                                onClick={() => setTsVisitMemberCount(n)}
+                                className="flex-1 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                                style={{
+                                  background: tsVisitMemberCount === n ? 'var(--accent)' : 'var(--bg-surface-2)',
+                                  color: tsVisitMemberCount === n ? '#fff' : 'var(--text-muted)',
+                                  border: `1px solid ${tsVisitMemberCount === n ? 'var(--accent)' : 'var(--border-subtle)'}`
+                                }}
+                              >
+                                {n} {n === 1 ? 'Member' : 'Members'}
+                              </button>
+                            ))}
+                          </div>
                         </div>
 
-                        {tsVisitReq && (
-                          <>
-                            {/* Number of members */}
-                            <div className="space-y-1">
-                              <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Number of Visit Members</label>
-                              <div className="flex space-x-2">
-                                {[1, 2, 3].map(n => (
-                                  <button
-                                    key={n}
-                                    type="button"
-                                    disabled={isLocked}
-                                    onClick={() => setTsVisitMemberCount(n)}
-                                    className="flex-1 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer"
-                                    style={{
-                                      background: tsVisitMemberCount === n ? 'var(--accent)' : 'var(--bg-surface-2)',
-                                      color: tsVisitMemberCount === n ? '#fff' : 'var(--text-muted)',
-                                      border: `1px solid ${tsVisitMemberCount === n ? 'var(--accent)' : 'var(--border-subtle)'}`
-                                    }}
-                                  >
-                                    {n} {n === 1 ? 'Member' : 'Members'}
-                                  </button>
-                                ))}
-                              </div>
+                        {/* Per-member employee selectors */}
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Visit Team Members</label>
+                          {Array.from({ length: tsVisitMemberCount }).map((_, idx) => (
+                            <div key={idx} className="flex items-center space-x-2">
+                              <span className="text-[10px] font-bold w-4 shrink-0" style={{ color: 'var(--text-muted)' }}>{idx + 1}.</span>
+                              <select
+                                required
+                                disabled={isLocked}
+                                value={tsVisitMembers[idx] || ''}
+                                onChange={(e) => {
+                                  const updated = [...tsVisitMembers];
+                                  updated[idx] = e.target.value;
+                                  setTsVisitMembers(updated);
+                                }}
+                                style={fieldStyle}
+                                className="flex-1 px-3 py-2 rounded-xl text-xs outline-none"
+                              >
+                                <option value="" disabled className="text-slate-700 dark:text-white">-- Select Employee --</option>
+                                {employees
+                                  .filter(emp => {
+                                    if (emp.Employee_ID === data?.complaint?.KAM_Employee_ID) return true;
+                                    const forbiddenRoles = ['TS Head', 'QC Head', 'Operations Head', 'Marketing Head', 'Finance Head', 'Managing Director', 'Administrator', 'Customer', 'KAM'];
+                                    return !forbiddenRoles.includes(emp.Role_Name);
+                                  })
+                                  .map(emp => (
+                                    <option key={emp.Employee_ID} value={emp.Employee_ID} className="text-slate-700 dark:text-white">
+                                      {emp.Employee_Name}{emp.Department_Name ? ` (${emp.Department_Name})` : ''}
+                                    </option>
+                                  ))}
+                              </select>
                             </div>
+                          ))}
+                        </div>
 
-                            {/* Per-member employee selectors */}
-                            <div className="space-y-2">
-                              <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Visit Team Members</label>
-                              {Array.from({ length: tsVisitMemberCount }).map((_, idx) => (
-                                <div key={idx} className="flex items-center space-x-2">
-                                  <span className="text-[10px] font-bold w-4 shrink-0" style={{ color: 'var(--text-muted)' }}>{idx + 1}.</span>
-                                  <select
-                                    required
-                                    disabled={isLocked}
-                                    value={tsVisitMembers[idx] || ''}
-                                    onChange={(e) => {
-                                      const updated = [...tsVisitMembers];
-                                      updated[idx] = e.target.value;
-                                      setTsVisitMembers(updated);
-                                    }}
-                                    style={fieldStyle}
-                                    className="flex-1 px-3 py-2 rounded-xl text-xs outline-none"
-                                  >
-                                    <option value="" disabled className="text-slate-700 dark:text-white">-- Select Employee --</option>
-                                    {employees
-                                      .filter(emp => {
-                                        if (emp.Employee_ID === data?.complaint?.KAM_Employee_ID) return true;
-                                        const forbiddenRoles = ['TS Head', 'QC Head', 'Operations Head', 'Marketing Head', 'Finance Head', 'Managing Director', 'Administrator', 'Customer', 'KAM'];
-                                        return !forbiddenRoles.includes(emp.Role_Name);
-                                      })
-                                      .map(emp => (
-                                        <option key={emp.Employee_ID} value={emp.Employee_ID} className="text-slate-700 dark:text-white">
-                                          {emp.Employee_Name}{emp.Department_Name ? ` (${emp.Department_Name})` : ''}
-                                        </option>
-                                      ))}
-                                  </select>
-                                </div>
-                              ))}
-                            </div>
-
-                            {/* Shared departure / return dates */}
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="space-y-1">
-                                <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Departure Date</label>
-                                <input
-                                  type="datetime-local"
-                                  required
-                                  disabled={isLocked}
-                                  value={tsDepartureDate}
-                                  onChange={(e) => setTsDepartureDate(e.target.value)}
-                                  style={fieldStyle}
-                                  className="w-full px-3 py-2 rounded-xl text-xs outline-none"
-                                />
-                              </div>
-                              <div className="space-y-1">
-                                <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Return Date</label>
-                                <input
-                                  type="datetime-local"
-                                  required
-                                  disabled={isLocked}
-                                  value={tsReturnDate}
-                                  onChange={(e) => setTsReturnDate(e.target.value)}
-                                  min={tsDepartureDate}
-                                  style={fieldStyle}
-                                  className="w-full px-3 py-2 rounded-xl text-xs outline-none"
-                                />
-                              </div>
-                            </div>
-                          </>
-                        )}
+                        {/* Shared departure / return dates */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Departure Date</label>
+                            <input
+                              type="datetime-local"
+                              required
+                              disabled={isLocked}
+                              value={tsDepartureDate}
+                              onChange={(e) => setTsDepartureDate(e.target.value)}
+                              style={fieldStyle}
+                              className="w-full px-3 py-2 rounded-xl text-xs outline-none"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Return Date</label>
+                            <input
+                              type="datetime-local"
+                              required
+                              disabled={isLocked}
+                              value={tsReturnDate}
+                              onChange={(e) => setTsReturnDate(e.target.value)}
+                              min={tsDepartureDate}
+                              style={fieldStyle}
+                              className="w-full px-3 py-2 rounded-xl text-xs outline-none"
+                            />
+                          </div>
+                        </div>
                       </div>
                     );
                   })()}
@@ -1581,20 +1619,6 @@ function ComplaintDetail() {
                         placeholder="Proposed claim settlement method..."
                       />
                     </div>
-
-                    {/* Only Visit Req checkbox — Clarify and Sample removed */}
-                    {tsAction !== 'visit-schedule' && (
-                      <div className="flex items-center space-x-2 py-1">
-                        <input
-                          type="checkbox"
-                          id="tsVisit"
-                          checked={tsVisitReq}
-                          onChange={(e) => setTsVisitReq(e.target.checked)}
-                          className="w-4 h-4 rounded bg-[var(--bg-surface-2)] border-[var(--border-subtle)] text-[var(--accent)] focus:ring-[var(--accent)] cursor-pointer"
-                        />
-                        <label htmlFor="tsVisit" className="text-[10px] font-bold uppercase cursor-pointer" style={{ color: 'var(--text-muted)' }}>Visit Req.</label>
-                      </div>
-                    )}
 
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Remarks / Remarks Log</label>
@@ -2225,7 +2249,7 @@ function ComplaintDetail() {
             })()}
 
             {/* Backwards Transition Panel (Rejections / Re-examinations) */}
-            {canTakeTimelineAction && (
+            {canTakeTimelineAction && !['TS Engineer', 'QC Engineer', 'Operations Engineer', 'Marketing Executive', 'Finance Executive'].includes(user.role) && (
               <div
                 className="reveal-panel p-6 rounded-3xl border space-y-4"
                 style={{
@@ -2258,9 +2282,7 @@ function ComplaintDetail() {
                       >
                         <option value="reject" className="text-slate-700 dark:text-white">Reject Claim (Closed)</option>
                         <option value="review-request" className="text-slate-700 dark:text-white">Request Re-examination (Flag without hard rejection)</option>
-                        {!canEditTs && (
-                          <option value="clarify" className="text-slate-700 dark:text-white">Seek Clarifications (Offline request)</option>
-                        )}
+                        <option value="clarify" className="text-slate-700 dark:text-white">Seek Clarifications (Offline request)</option>
                       </select>
                     )}
                   </div>
@@ -2284,6 +2306,68 @@ function ComplaintDetail() {
                     className="w-full py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-500 hover:text-red-400 border border-red-500/20 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-2 cursor-pointer"
                   >
                     <span>Submit Timeline Action</span>
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {/* Clarification Response Panel */}
+            {canProvideClarification && (
+              <div
+                className="reveal-panel p-6 rounded-3xl border space-y-4 animate-none"
+                style={{
+                  background: 'var(--bg-surface)',
+                  borderColor: 'var(--accent-soft)',
+                  boxShadow: '0 10px 30px var(--shadow-color)'
+                }}
+              >
+                <div className="flex items-center space-x-2" style={{ color: 'var(--accent)' }}>
+                  <HelpCircle className="w-5 h-5" />
+                  <h3 className="text-sm font-bold uppercase tracking-wider">Provide Clarification Response</h3>
+                </div>
+
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  setActionError(null);
+                  setSubmitting(true);
+                  try {
+                    const payload = {
+                      action: 'clarification-done',
+                      remarks: rejectRemarks
+                    };
+                    await api.post(`/complaints/${id}/action`, payload);
+                    setActionSuccess('Clarification response submitted successfully.');
+                    setRejectRemarks('');
+                    await loadAllData();
+                  } catch (err) {
+                    setActionError(err.response?.data?.message || 'Failed to submit clarification response.');
+                  } finally {
+                    setSubmitting(false);
+                  }
+                }} className="space-y-4">
+                  <div className="p-3 bg-yellow-500/10 border border-yellow-500/25 rounded-2xl text-xs text-yellow-250">
+                    A clarification has been requested. Please provide detailed answers or updates offline method details below.
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Response Details</label>
+                    <textarea
+                      rows="3"
+                      required
+                      value={rejectRemarks}
+                      onChange={(e) => setRejectRemarks(e.target.value)}
+                      style={fieldStyle}
+                      className="w-full px-3 py-2 rounded-xl text-xs outline-none"
+                      placeholder="Enter the clarification response..."
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="w-full py-2.5 text-white rounded-xl font-bold flex items-center justify-center space-x-2 transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-0 text-xs btn-sheen cursor-pointer animate-none"
+                    style={{ background: 'var(--accent)', boxShadow: '0 8px 20px var(--accent-soft)' }}
+                  >
+                    <span>Submit Response (Clarification Done)</span>
                   </button>
                 </form>
               </div>

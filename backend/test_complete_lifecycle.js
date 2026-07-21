@@ -165,10 +165,15 @@ async function runLifecycleTest() {
     }, { headers: { Authorization: `Bearer ${pmToken}` } });
 
     // 10. Marketing Head approves settlement
-    console.log('\nTest 9: Marketing Head approving commercial payout of ₹65,000...');
+    const loggedDetails = await axios.get(`${BASE_URL}/complaints/${complaintId}`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const totalValue = parseFloat(loggedDetails.data.data.complaint.Total_Complaint_Value || 1120);
+
+    console.log(`\nTest 9: Marketing Head approving commercial payout of ₹${totalValue}...`);
     await axios.post(`${BASE_URL}/complaints/${complaintId}/approve`, {
       stage: 'marketing-head',
-      settlementAmount: 65000,
+      settlementAmount: totalValue,
       remarks: 'Approved. Send to Deepak Sinha (Finance) to issue Credit Note.'
     }, { headers: { Authorization: `Bearer ${mktHeadToken}` } });
 
@@ -177,14 +182,14 @@ async function runLifecycleTest() {
       headers: { Authorization: `Bearer ${finToken}` }
     });
     console.log(`   Verify Status: ${verifyRes.data.data.complaint.Status} (Expected: Finance Pending)`);
-    console.log(`   Verify Settlement Amount in DB: ₹${verifyRes.data.data.settlement.Approved_Amount} (Expected: ₹65000)`);
+    console.log(`   Verify Settlement Amount in DB: ₹${verifyRes.data.data.settlement.Approved_Amount} (Expected: ₹${totalValue})`);
 
     // 10b. Finance Executive prepares credit note (Stage 10)
     console.log('\nTest 9b: Finance Executive issuing SAP Credit Note...');
     await axios.post(`${BASE_URL}/complaints/${complaintId}/finance`, {
       creditNoteNumber: 'SAP-CN-2026-9901',
       creditNoteDate: '2026-07-15',
-      creditNoteAmount: 65000,
+      creditNoteAmount: totalValue,
       fiscalYear: '2026',
       companyCode: 'OPM_PAPER',
       remarks: 'SAP sync complete. Credit note posted.'

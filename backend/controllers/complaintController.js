@@ -88,8 +88,8 @@ function getVisibilityFilter(user, isDetail = false) {
   } else {
     // Strict active queue filter for department lists (actionable complaints in their pipeline)
     if (user.role === 'TS Head') {
-      conditions.push('c.Current_Department_ID = ? AND c.Complaint_Status_ID IN (18, 19)');
-      params.push(user.departmentId);
+      conditions.push('(c.Current_Assignee_ID = ? AND c.Complaint_Status_ID IN (18, 19)) OR (c.Complaint_Status_ID IN (18, 19) AND EXISTS (SELECT 1 FROM Customer_Executive_Assignment cea WHERE cea.Customer_ID = c.Customer_ID AND cea.Employee_ID = ? AND cea.Is_Active = TRUE)) OR (c.Complaint_Status_ID = 19 AND EXISTS (SELECT 1 FROM Visit_Members vm WHERE vm.Complaint_ID = c.Complaint_ID AND vm.Employee_ID = ?))');
+      params.push(user.id, user.id, user.id);
     } else if (user.role === 'TS Engineer') {
       conditions.push('(c.Current_Assignee_ID = ? AND c.Complaint_Status_ID IN (18, 19)) OR (c.Complaint_Status_ID IN (18, 19) AND EXISTS (SELECT 1 FROM Customer_Executive_Assignment cea WHERE cea.Customer_ID = c.Customer_ID AND cea.Employee_ID = ? AND cea.Is_Active = TRUE)) OR (c.Complaint_Status_ID = 19 AND EXISTS (SELECT 1 FROM Visit_Members vm WHERE vm.Complaint_ID = c.Complaint_ID AND vm.Employee_ID = ?))');
       params.push(user.id, user.id, user.id);
@@ -97,28 +97,28 @@ function getVisibilityFilter(user, isDetail = false) {
       conditions.push('(c.Current_Assignee_ID = ? AND c.Complaint_Status_ID IN (20, 21)) OR (c.Complaint_Status_ID IN (20, 21) AND EXISTS (SELECT 1 FROM Customer_Executive_Assignment cea WHERE cea.Customer_ID = c.Customer_ID AND cea.Employee_ID = ? AND cea.Is_Active = TRUE))');
       params.push(user.id, user.id);
     } else if (user.role === 'QC Head') {
-      conditions.push('c.Current_Department_ID = ? AND c.Complaint_Status_ID = 84');
-      params.push(user.departmentId);
+      conditions.push('(c.Current_Assignee_ID = ? AND c.Complaint_Status_ID = 84) OR (c.Complaint_Status_ID = 84 AND EXISTS (SELECT 1 FROM Customer_Executive_Assignment cea WHERE cea.Customer_ID = c.Customer_ID AND cea.Employee_ID = ? AND cea.Is_Active = TRUE))');
+      params.push(user.id, user.id);
     } else if (user.role === 'Operations Engineer') {
       conditions.push('(c.Current_Assignee_ID = ? AND c.Complaint_Status_ID = 22) OR (c.Complaint_Status_ID = 22 AND EXISTS (SELECT 1 FROM Customer_Executive_Assignment cea WHERE cea.Customer_ID = c.Customer_ID AND cea.Employee_ID = ? AND cea.Is_Active = TRUE))');
       params.push(user.id, user.id);
     } else if (user.role === 'Operations Head') {
-      conditions.push('c.Current_Department_ID = ? AND c.Complaint_Status_ID = 23');
-      params.push(user.departmentId);
+      conditions.push('(c.Current_Assignee_ID = ? AND c.Complaint_Status_ID = 23) OR (c.Complaint_Status_ID = 23 AND EXISTS (SELECT 1 FROM Customer_Executive_Assignment cea WHERE cea.Customer_ID = c.Customer_ID AND cea.Employee_ID = ? AND cea.Is_Active = TRUE))');
+      params.push(user.id, user.id);
     } else if (user.role === 'Marketing Executive') {
       conditions.push('(c.Current_Assignee_ID = ? AND c.Complaint_Status_ID = 24) OR (c.Complaint_Status_ID = 24 AND EXISTS (SELECT 1 FROM Customer_Executive_Assignment cea WHERE cea.Customer_ID = c.Customer_ID AND cea.Employee_ID = ? AND cea.Is_Active = TRUE))');
       params.push(user.id, user.id);
     } else if (user.role === 'Marketing Head') {
-      conditions.push('c.Current_Department_ID = ? AND c.Complaint_Status_ID = 25');
-      params.push(user.departmentId);
+      conditions.push('(c.Current_Assignee_ID = ? AND c.Complaint_Status_ID = 25) OR (c.Complaint_Status_ID = 25 AND EXISTS (SELECT 1 FROM Customer_Executive_Assignment cea WHERE cea.Customer_ID = c.Customer_ID AND cea.Employee_ID = ? AND cea.Is_Active = TRUE))');
+      params.push(user.id, user.id);
     } else if (user.role === 'Managing Director') {
       conditions.push('c.Complaint_Status_ID = 26');
     } else if (user.role === 'Finance Executive') {
       conditions.push('(c.Current_Assignee_ID = ? AND c.Complaint_Status_ID = 27) OR (c.Complaint_Status_ID = 27 AND EXISTS (SELECT 1 FROM Customer_Executive_Assignment cea WHERE cea.Customer_ID = c.Customer_ID AND cea.Employee_ID = ? AND cea.Is_Active = TRUE))');
       params.push(user.id, user.id);
     } else if (user.role === 'Finance Head') {
-      conditions.push('c.Current_Department_ID = ? AND c.Complaint_Status_ID = 83');
-      params.push(user.departmentId);
+      conditions.push('(c.Current_Assignee_ID = ? AND c.Complaint_Status_ID = 83) OR (c.Complaint_Status_ID = 83 AND EXISTS (SELECT 1 FROM Customer_Executive_Assignment cea WHERE cea.Customer_ID = c.Customer_ID AND cea.Employee_ID = ? AND cea.Is_Active = TRUE))');
+      params.push(user.id, user.id);
     }
 
     if (conditions.length === 0) {
@@ -810,10 +810,10 @@ async function createComplaint(req, res, next) {
         ]
       );
 
-      // Update Total Value
+      // Update Total Value and Approved Settlement Value
       await connection.execute(
-        'UPDATE Complaint_Header SET Total_Complaint_Value = ? WHERE Complaint_ID = ?',
-        [complaintValue, complaintId]
+        'UPDATE Complaint_Header SET Total_Complaint_Value = ?, Expected_Settlement_Amount = ? WHERE Complaint_ID = ?',
+        [complaintValue, complaintValue, complaintId]
       );
 
       // Save Attachments
@@ -1240,9 +1240,13 @@ async function submitTsReview(req, res, next) {
       'SELECT TS_Details_ID, Visit_Required FROM Technical_Service_Details WHERE Complaint_ID = ?',
       [id]
     );
-    const effectiveVisitRequired = actionType === 'visit-request' || actionType === 'visit-schedule'
-      ? true
-      : Boolean(visitRequired);
+    // Determine effective visit required flag based on action type
+    let effectiveVisitRequired = 0;
+    if (['visit-request', 'request-visit', 'visit-schedule'].includes(actionType)) {
+      effectiveVisitRequired = 1;
+    } else if (existingTsDetails.length > 0) {
+      effectiveVisitRequired = existingTsDetails[0].Visit_Required;
+    }
 
     if (existingTsDetails.length > 0) {
       await connection.execute(
@@ -1251,7 +1255,7 @@ async function submitTsReview(req, res, next) {
              Visit_Required = ?, Recommended_Action = ?, Can_Close_Complaint = ?, 
              Remarks = ?, Updated_On = NOW(), Updated_By = ?
          WHERE Complaint_ID = ?`,
-        [req.user.id, observation || '', effectiveVisitRequired ? 1 : 0, recommendedAction || '', canCloseComplaint ? 1 : 0, remarks || '', req.user.id, id]
+        [req.user.id, observation || '', effectiveVisitRequired, recommendedAction || '', canCloseComplaint ? 1 : 0, remarks || '', req.user.id, id]
       );
     } else {
       await connection.execute(
@@ -1259,7 +1263,7 @@ async function submitTsReview(req, res, next) {
            Complaint_ID, Assigned_Engineer_ID, Investigation_Date, Technical_Observation, 
            Visit_Required, Recommended_Action, Can_Close_Complaint, Remarks, Created_On, Created_By
          ) VALUES (?, ?, NOW(), ?, ?, ?, ?, ?, NOW(), ?)`,
-        [id, req.user.id, observation || '', effectiveVisitRequired ? 1 : 0, recommendedAction || '', canCloseComplaint ? 1 : 0, remarks || '', req.user.id]
+        [id, req.user.id, observation || '', effectiveVisitRequired, recommendedAction || '', canCloseComplaint ? 1 : 0, remarks || '', req.user.id]
       );
     }
 
@@ -1270,17 +1274,25 @@ async function submitTsReview(req, res, next) {
     let actionTypeLookupId = 76; // Default 'Forwarded'
     let logRemarks = '';
 
-    if (actionType === 'visit-request') {
+    const tsHeadRoleId = 4; // TS Head
+    const [tsHeadLookup] = await connection.execute(
+      `SELECT Employee_ID FROM Employee_Master
+       WHERE Role_ID = ? AND Department_ID = ? AND Is_Active = TRUE LIMIT 1`,
+      [tsHeadRoleId, header.Current_Department_ID]
+    );
+    const tsHeadId = tsHeadLookup.length > 0 ? tsHeadLookup[0].Employee_ID : req.user.id;
+
+    if (actionType === 'visit-request' || actionType === 'request-visit') {
       if (!['TS Engineer', 'TS Head', 'Administrator'].includes(req.user.role)) {
         await connection.rollback();
         return sendError(res, 'Only Technical Service users can request a visit.', 403);
       }
 
       actionTypeLookupId = 75; // Assigned / requested
-      nextStatusId = header.Complaint_Status_ID;
+      nextStatusId = 18;       // Stays in TS Review
       nextDeptId = header.Current_Department_ID;
-      nextAssigneeId = req.user.id;
-      logRemarks = `TS visit requested by ${req.user.role}. Awaiting TS Head scheduling. Remarks: ${remarks || ''}`;
+      nextAssigneeId = tsHeadId; // Assigned to TS Head for confirmation
+      logRemarks = `TS Engineer requested customer visit. Sent to TS Head for confirmation. Remarks: ${remarks || ''}`;
 
     } else if (actionType === 'visit-schedule') {
       // Authorization: only TS Head or Admin may schedule
@@ -1368,6 +1380,83 @@ async function submitTsReview(req, res, next) {
         [id]
       );
 
+    } else if (actionType === 'complete-visit') {
+      // Authorization: only TS Engineer
+      if (!['TS Engineer', 'Administrator'].includes(req.user.role)) {
+        await connection.rollback();
+        return sendError(res, 'Only TS Engineers or Administrator can complete visit review.', 403);
+      }
+
+      actionTypeLookupId = 76; // Forwarded
+      nextStatusId = 18;       // Stays in TS Review
+      nextDeptId = header.Current_Department_ID;
+      nextAssigneeId = tsHeadId; // Goes to TS Head for verification
+      logRemarks = `TS Engineer completed visit review. Forwarded to TS Head for verification. Remarks: ${remarks || ''}`;
+
+    } else if (actionType === 'send-back-visit') {
+      // Return to visit scheduled (status 19)
+      actionTypeLookupId = 80; // Review Requested
+      nextStatusId = 19;       // Visit Scheduled
+      nextDeptId = header.Current_Department_ID;
+
+      // Lookup KAM for coordination
+      const [kamLookup] = await connection.execute(
+        `SELECT k.Employee_ID FROM Customer_Master c
+         JOIN KAM_Master k ON c.KAM_ID = k.KAM_ID
+         WHERE c.Customer_ID = ?`,
+        [header.Customer_ID]
+      );
+      nextAssigneeId = kamLookup.length > 0 ? kamLookup[0].Employee_ID : req.user.id;
+
+      // Reset Remarks and Submitted_At for all visit members
+      await connection.execute(
+        'UPDATE Visit_Members SET Remarks = NULL, Submitted_At = NULL WHERE Complaint_ID = ?',
+        [id]
+      );
+
+      // Reset Visit_Details status back to 51 (Scheduled)
+      await connection.execute(
+        'UPDATE Visit_Details SET Visit_Status_ID = 51, Updated_On = NOW(), Updated_By = ? WHERE Complaint_ID = ? AND Visit_Status_ID = 52',
+        [req.user.id, id]
+      );
+
+      // Re-pause SLA
+      await connection.execute(
+        `UPDATE Complaint_Header 
+         SET SLA_Paused = TRUE, SLA_Pause_Reason = 'Customer Visit Scheduled (Re-opened for revision)', SLA_Paused_At = NOW()
+         WHERE Complaint_ID = ?`,
+        [id]
+      );
+
+      logRemarks = `TS Engineer returned visit reports for revision. Remarks: ${remarks || ''}`;
+
+    } else if (actionType === 'reject-to-eng') {
+      // Authorization: only TS Head or Admin
+      if (!['TS Head', 'Administrator'].includes(req.user.role)) {
+        await connection.rollback();
+        return sendError(res, 'Only TS Head or Administrator can return review to TS Engineer.', 403);
+      }
+
+      // Find the TS Engineer mapped to the customer
+      const [assignment] = await connection.execute(
+        `SELECT Employee_ID FROM Customer_Executive_Assignment 
+         WHERE Customer_ID = ? AND Department_ID = 1 AND Business_Unit_ID = ? AND Is_Active = TRUE LIMIT 1`,
+        [header.Customer_ID, buId]
+      );
+      let tsEngineerId = assignment.length > 0 ? assignment[0].Employee_ID : null;
+      if (!tsEngineerId) {
+        const [fallback] = await connection.execute(
+          `SELECT Employee_ID FROM Employee_Master WHERE Role_ID = 5 AND Is_Active = TRUE LIMIT 1`
+        );
+        tsEngineerId = fallback.length > 0 ? fallback[0].Employee_ID : 100003;
+      }
+
+      actionTypeLookupId = 80; // Review Requested
+      nextStatusId = 18;       // Stays in TS Review
+      nextDeptId = header.Current_Department_ID;
+      nextAssigneeId = tsEngineerId; // Assign back to TS Engineer
+      logRemarks = `TS Head rejected review. Returned to TS Engineer for re-evaluation. Remarks: ${remarks || ''}`;
+
     } else if (actionType === 'forward') {
       // Prevent forwarding to QC while a customer visit is requested or still in progress.
       const [latestVisitRows] = await connection.execute(
@@ -1387,12 +1476,22 @@ async function submitTsReview(req, res, next) {
         return sendError(res, 'Cannot forward to QC until the requested customer visit is scheduled and completed.', 400);
       }
 
-      actionTypeLookupId = 76; // Forwarded
-      const next = await resolveNextStage(connection, 2, buId, header.Customer_ID);
-      nextStatusId = next.statusId;
-      nextDeptId = next.departmentId;
-      nextAssigneeId = next.assigneeId;
-      logRemarks = `Technical Service completed review. Forwarding to QC. Remarks: ${remarks || ''}`;
+      if (req.user.role === 'TS Engineer') {
+        // Stays in TS stage, but assigned to TS Head for approval
+        actionTypeLookupId = 76; // Forwarded
+        nextStatusId = 18;       // Under TS Review
+        nextDeptId = header.Current_Department_ID;
+        nextAssigneeId = tsHeadId;
+        logRemarks = `TS Engineer completed review. Forwarded to TS Head for approval. Remarks: ${remarks || ''}`;
+      } else {
+        // TS Head or Admin forwarding to QC
+        actionTypeLookupId = 76; // Forwarded
+        const next = await resolveNextStage(connection, 2, buId, header.Customer_ID);
+        nextStatusId = next.statusId;
+        nextDeptId = next.departmentId;
+        nextAssigneeId = next.assigneeId;
+        logRemarks = `Technical Service completed review. Forwarding to QC. Remarks: ${remarks || ''}`;
+      }
 
     } else if (actionType === 'close') {
       // TS Head / Admin can close the complaint directly
@@ -1546,17 +1645,23 @@ async function submitVisitMemberRemarks(req, res, next) {
     let statusMsg = 'Visit remarks submitted. Waiting for other members to submit their remarks.';
 
     if (allSubmitted) {
-      // All members submitted — return complaint to TS Head
       const buId = header.Business_Unit_ID;
-      // Find the TS Head for this department
-      const tsDeptId = header.Current_Department_ID; // stays in TS dept
-      const tsHeadRoleId = 4; // TS Head role ID (Role_ID = 4 in Role_Master)
-      const [tsHead] = await connection.execute(
-        `SELECT Employee_ID FROM Employee_Master
-         WHERE Role_ID = ? AND Department_ID = ? AND Is_Active = TRUE LIMIT 1`,
-        [tsHeadRoleId, tsDeptId]
+      const tsDeptId = header.Current_Department_ID;
+      // All members submitted — return complaint to TS Head
+      // Find the TS Engineer mapped to the customer
+      const [assignment] = await connection.execute(
+        `SELECT Employee_ID FROM Customer_Executive_Assignment 
+         WHERE Customer_ID = ? AND Department_ID = 1 AND Business_Unit_ID = ? AND Is_Active = TRUE LIMIT 1`,
+        [header.Customer_ID, buId]
       );
-      const tsHeadId = tsHead.length > 0 ? tsHead[0].Employee_ID : req.user.id;
+      let tsEngineerId = assignment.length > 0 ? assignment[0].Employee_ID : null;
+      if (!tsEngineerId) {
+        // Fallback: first active TS Engineer
+        const [fallback] = await connection.execute(
+          `SELECT Employee_ID FROM Employee_Master WHERE Role_ID = 5 AND Is_Active = TRUE LIMIT 1`
+        );
+        tsEngineerId = fallback.length > 0 ? fallback[0].Employee_ID : 100003; // Neha Verma
+      }
 
       // Mark visit as completed
       await connection.execute(
@@ -1565,10 +1670,10 @@ async function submitVisitMemberRemarks(req, res, next) {
         [req.user.id, id]
       );
 
-      // Return complaint to TS Head
+      // Return complaint to TS Engineer
       await connection.execute(
         'UPDATE Complaint_Header SET Complaint_Status_ID = 18, Current_Assignee_ID = ? WHERE Complaint_ID = ?',
-        [tsHeadId, id]
+        [tsEngineerId, id]
       );
 
       // Resume SLA: calculate paused duration and extend SLA_Due_Date
@@ -1595,10 +1700,10 @@ async function submitVisitMemberRemarks(req, res, next) {
            Previous_Department_ID, Current_Department_ID, Remarks, Created_On
          ) VALUES (?, ?, ?, NOW(), 77, ?, ?, ?, NOW())`,
         [id, workflowConfigId, req.user.id, tsDeptId, tsDeptId,
-         `All visit members submitted field remarks. Complaint returned to TS Head for closure decision.`]
+         `All visit members submitted field remarks. Complaint returned to TS Engineer for review.`]
       );
 
-      statusMsg = 'All visit members have submitted remarks. Complaint returned to TS for closure.';
+      statusMsg = 'All visit members have submitted remarks. Complaint returned to TS Engineer for review.';
     } else {
       // Log partial submission
       const workflowConfigId = header.Business_Unit_ID === 1 ? 1 : 8;
@@ -2267,7 +2372,7 @@ async function timelineAction(req, res, next) {
     const { action, remarks } = req.body; // 'reject', 'review-request', 'clarify'
 
     const [headers] = await connection.execute(
-      'SELECT Customer_ID, Business_Unit_ID, Current_Department_ID, Complaint_Status_ID, Expected_Settlement_Amount, Total_Complaint_Value, SLA_Paused, SLA_Pause_Reason FROM Complaint_Header WHERE Complaint_ID = ?',
+      'SELECT Customer_ID, Business_Unit_ID, Current_Department_ID, Complaint_Status_ID, Expected_Settlement_Amount, Total_Complaint_Value, SLA_Paused, SLA_Pause_Reason, SLA_Due_Date, SLA_Paused_At FROM Complaint_Header WHERE Complaint_ID = ?',
       [id]
     );
     if (headers.length === 0) {
@@ -2277,7 +2382,7 @@ async function timelineAction(req, res, next) {
     const header = headers[0];
     const buId = header.Business_Unit_ID;
 
-    if (header.SLA_Paused) {
+    if (header.SLA_Paused && action !== 'clarification-done') {
       await connection.rollback();
       return sendError(res, `Action denied. SLA is paused (Reason: ${header.SLA_Pause_Reason || 'Pending task'}).`, 400);
     }
@@ -2293,12 +2398,7 @@ async function timelineAction(req, res, next) {
     let actionTypeLookupId = 78; // Default 'Rejected'
     let logRemarks = '';
 
-    if (action === 'clarify') {
-      actionTypeLookupId = 79; // Clarification Requested
-      logRemarks = `Reviewer sought clarifications: ${remarks || ''}`;
-      // Stays in same department and status, but log recorded
-    } 
-    else if (action === 'reopen') {
+    if (action === 'reopen') {
       // Role check: Only KAMs and Administrators can reopen complaints
       if (!['Administrator', 'KAM'].includes(req.user.role) && !req.user.isKam) {
         await connection.rollback();
@@ -2383,7 +2483,6 @@ async function timelineAction(req, res, next) {
     } 
     else {
       const currentStatus = header.Complaint_Status_ID;
-
       if (action === 'reject') {
         // Rejection: Go directly back to KAM and close as Rejected (29)
         actionTypeLookupId = 78; // Rejected
@@ -2408,6 +2507,81 @@ async function timelineAction(req, res, next) {
           nextAssigneeId = cust.length > 0 ? cust[0].Employee_ID : 100002;
         }
         logRemarks = `Complaint rejected. Returned to KAM and closed. Remarks: ${remarks || ''}`;
+      }
+      else if (action === 'clarify') {
+        // Seek Clarifications (Offline request)
+        actionTypeLookupId = 79; // Clarification Requested
+        nextStatusId = currentStatus;
+        nextDeptId = header.Current_Department_ID;
+
+        // Resolve customer's KAM
+        const [segmentKam] = await connection.execute(
+          `SELECT ksa.KAM_ID, k.Employee_ID 
+           FROM Customer_KAM_Segment_Assignment ksa
+           JOIN KAM_Master k ON ksa.KAM_ID = k.KAM_ID
+           WHERE ksa.Customer_ID = ? AND ksa.Business_Unit_ID = ? AND ksa.Is_Active = TRUE`,
+          [header.Customer_ID, buId]
+        );
+        let kamEmployeeId = segmentKam.length > 0 ? segmentKam[0].Employee_ID : null;
+        if (!kamEmployeeId) {
+          const [cust] = await connection.execute(
+            `SELECT k.Employee_ID FROM Customer_Master c LEFT JOIN KAM_Master k ON c.KAM_ID = k.KAM_ID WHERE c.Customer_ID = ?`,
+            [header.Customer_ID]
+          );
+          kamEmployeeId = cust.length > 0 ? cust[0].Employee_ID : 100020;
+        }
+
+        nextAssigneeId = kamEmployeeId;
+        logRemarks = `Seek Clarifications (Offline request). Assigned to KAM. Remarks: ${remarks || ''}`;
+
+        // Pause SLA
+        await connection.execute(
+          `UPDATE Complaint_Header 
+           SET SLA_Paused = TRUE, SLA_Pause_Reason = 'Clarification Requested', SLA_Paused_At = NOW()
+           WHERE Complaint_ID = ?`,
+          [id]
+        );
+      }
+      else if (action === 'clarification-done') {
+        // Clarification Done
+        actionTypeLookupId = 77; // Completed / Actioned
+        nextStatusId = currentStatus;
+
+        // Find the last employee assignee before the clarification request (who is not the KAM or Customer)
+        const [lastActor] = await connection.execute(
+          `SELECT Action_By, Previous_Department_ID FROM Complaint_Workflow_Log 
+           WHERE Complaint_ID = ? AND Action_By NOT IN (
+             SELECT Employee_ID FROM KAM_Master UNION SELECT Customer_ID FROM Customer_Master
+           )
+           ORDER BY Workflow_Log_ID DESC LIMIT 1`,
+          [id]
+        );
+        
+        let previousActorId = lastActor.length > 0 ? lastActor[0].Action_By : null;
+        let previousDeptId = lastActor.length > 0 ? lastActor[0].Previous_Department_ID : header.Current_Department_ID;
+
+        if (!previousActorId) {
+          // Fallback to default department assignee
+          previousActorId = await getAssignedEmployeeForDept(connection, header.Customer_ID, header.Current_Department_ID, 5, buId);
+        }
+
+        nextAssigneeId = previousActorId;
+        nextDeptId = previousDeptId;
+        logRemarks = `Clarification provided by KAM. Returned to assignee. Remarks: ${remarks || ''}`;
+
+        // Resume SLA: calculate paused duration and extend SLA_Due_Date
+        let newSlaDueDate = new Date(header.SLA_Due_Date);
+        if (header.SLA_Paused_At) {
+          const pausedTimeMs = Date.now() - new Date(header.SLA_Paused_At).getTime();
+          newSlaDueDate = new Date(newSlaDueDate.getTime() + pausedTimeMs);
+        }
+
+        await connection.execute(
+          `UPDATE Complaint_Header 
+           SET SLA_Paused = FALSE, SLA_Pause_Reason = NULL, SLA_Paused_At = NULL, SLA_Due_Date = ?
+           WHERE Complaint_ID = ?`,
+          [newSlaDueDate, id]
+        );
       }
       else {
         // Review Request (go back one stage)
